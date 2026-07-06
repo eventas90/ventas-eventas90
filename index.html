@@ -15434,6 +15434,9 @@ async function recibirMercaderia(productoId) {
 }
 
 async function cargarOrdenesCompra() {
+  // La tabla ordenes_compra no existe en este sistema (módulo oculto)
+  ordenesCompra = [];
+  return;
   try {
     const { data, error } = await sb.from('ordenes_compra')
       .select('*')
