@@ -1,0 +1,10 @@
+{
+  "name": "Ventas Focus",
+  "short_name": "Ventas Focus",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0a0c10",
+  "theme_color": "#0a0c10",
+  "lang": "es",
+  "icons": []
+}
