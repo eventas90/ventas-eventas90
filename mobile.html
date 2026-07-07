@@ -670,8 +670,7 @@ select.field-input { cursor:pointer; }
     <!-- ══ MAIN MODULE NAV ══ -->
     <div class="main-nav">
       <button class="main-nav-btn active" id="mnVentas" onclick="switchModule('ventas')">🛒 Ventas</button>
-      <!-- Módulo Cotizaciones oculto en eventas90 (el backend nuevo no tiene cotizaciones) -->
-      <button class="main-nav-btn" id="mnCotiz" style="display:none" onclick="switchModule('cotiz')">📋 Cotizaciones</button>
+      <button class="main-nav-btn" id="mnCotiz" onclick="switchModule('cotiz')">📋 Cotizaciones</button>
     </div>
 
     <!-- ══ MÓDULO VENTAS ══ -->
@@ -1559,8 +1558,6 @@ async function initApp() {
    MODULE SWITCHER
 ════════════════════════════════════════════ */
 function switchModule(mod) {
-  // eventas90: el módulo de cotizaciones no existe en el backend nuevo
-  if (mod === 'cotiz') { console.warn('Módulo cotizaciones deshabilitado en eventas90'); mod = 'ventas'; }
   const mods = ['ventas','cotiz'];
   mods.forEach(m => {
     const el = document.getElementById('modulo' + m.charAt(0).toUpperCase() + m.slice(1));
@@ -2978,15 +2975,14 @@ async function sbSaveCotizacion(c) {
     fecha_registro:   c.fechaRegistro   || new Date().toISOString(),
     registrado_por:   c.registradoPor   || ''
   };
-  // eventas90: el RPC save_cotizacion no existe en el backend nuevo — guard silencioso
-  console.warn('save_cotizacion no disponible en eventas90 — cotización no guardada', payload.id || '');
-  return payload.id || null;
+  const { data, error } = await sb.rpc('save_cotizacion', { p_user: currentUser?.user||'', p_cotizacion: payload });
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 async function sbGetCotizaciones() {
-  // eventas90: el RPC get_cotizaciones no existe en el backend nuevo — estado vacío
-  console.warn('get_cotizaciones no disponible en eventas90 — devolviendo lista vacía');
-  const data = [];
+  const { data, error } = await sb.rpc('get_cotizaciones', { p_user: currentUser?.user||'' });
+  if (error) throw new Error(error.message);
   return (data||[]).map(c => ({
     id:               c.id,
     numero:           c.numero            || '',
@@ -3714,8 +3710,8 @@ async function eliminarCot(id) {
   const c=cotizaciones.find(x=>x.id===id); if(!c) return;
   if(!confirm(`¿Eliminar cotización ${c.numero} de ${c.clienteNombre}?`)) return;
   try {
-    // eventas90: la tabla cotizaciones no existe en el backend nuevo — solo se elimina en memoria
-    console.warn('Tabla cotizaciones no disponible en eventas90 — eliminación solo local');
+    const {error}=await sb.from('cotizaciones').delete().eq('id',id);
+    if(error) throw error;
     cotizaciones=cotizaciones.filter(x=>x.id!==id);
     renderHistorialCot();
     showToast('🗑️ Cotización eliminada','success');

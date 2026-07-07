@@ -3417,8 +3417,7 @@ async function sbSaveCotizacion(c) {
 }
 
 async function sbGetCotizaciones() {
-  // El RPC get_cotizaciones NO existe en este proyecto Supabase (módulo cotizaciones deshabilitado).
-  // Devolver [] en silencio para no romper el flujo de ventas (_avisarCotizacionActiva).
+  // Manejo suave de errores: si el RPC falla, devolver [] para no romper el flujo de ventas (_avisarCotizacionActiva).
   let data = null;
   try {
     const res = await sb.rpc('get_cotizaciones', { p_user: currentUser?.user||'' });
@@ -3718,9 +3717,9 @@ function fmtFecha(v) {
 
 // ===== LOGIN =====
 const PERMS = {
-  admin:    {verCostos:true, verUtilidad:true, editarPrecios:true, aprobarDescuentos:true, cambiarFormulas:true, adminUsuarios:true, verHistorial:true, borrarHistorial:true, puedePendiente:false, puedeAprobar:true, tabs:['ventas','cobros','usuarios','parametros','historial']},
-  gerencia: {verCostos:true, verUtilidad:true, editarPrecios:true, aprobarDescuentos:true, cambiarFormulas:false, adminUsuarios:false, verHistorial:true, borrarHistorial:false, puedePendiente:true, puedeAprobar:true, tabs:['ventas','cobros']},
-  ventas:   {verCostos:false, verUtilidad:false, editarPrecios:false, aprobarDescuentos:false, cambiarFormulas:false, adminUsuarios:false, verHistorial:false, borrarHistorial:false, puedePendiente:false, puedeAprobar:false, tabs:['ventas','cobros']},
+  admin:    {verCostos:true, verUtilidad:true, editarPrecios:true, aprobarDescuentos:true, cambiarFormulas:true, adminUsuarios:true, verHistorial:true, borrarHistorial:true, puedePendiente:false, puedeAprobar:true, tabs:['ventas','cotizaciones','cobros','usuarios','parametros','historial']},
+  gerencia: {verCostos:true, verUtilidad:true, editarPrecios:true, aprobarDescuentos:true, cambiarFormulas:false, adminUsuarios:false, verHistorial:true, borrarHistorial:false, puedePendiente:true, puedeAprobar:true, tabs:['ventas','cotizaciones','cobros']},
+  ventas:   {verCostos:false, verUtilidad:false, editarPrecios:false, aprobarDescuentos:false, cambiarFormulas:false, adminUsuarios:false, verHistorial:false, borrarHistorial:false, puedePendiente:false, puedeAprobar:false, tabs:['ventas','cotizaciones','cobros']},
   bodega:   {verCostos:false, verUtilidad:false, editarPrecios:false, aprobarDescuentos:false, cambiarFormulas:false, adminUsuarios:false, verHistorial:false, borrarHistorial:false, puedePendiente:false, puedeAprobar:false, tabs:[]},
   externo:  {verCostos:false, verUtilidad:false, editarPrecios:false, aprobarDescuentos:false, cambiarFormulas:false, adminUsuarios:false, verHistorial:false, borrarHistorial:false, puedePendiente:false, puedeAprobar:false, tabs:[]}
 };
