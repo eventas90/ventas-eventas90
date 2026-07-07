@@ -12645,8 +12645,8 @@ async function compartirCotizacion(id) {
   if (!c) return;
 
   const link = c.tokenPublico
-    ? `https://cotizacion.focusstore.net/?t=${c.tokenPublico}`
-    : `https://cotizacion.focusstore.net/?id=${encodeURIComponent(c.numero)}`;
+    ? `https://eventas90.github.io/ventas-eventas90/cotizacion.html?t=${c.tokenPublico}`
+    : `https://eventas90.github.io/ventas-eventas90/cotizacion.html?id=${encodeURIComponent(c.numero)}`;
   const tel  = (c.clienteTel || '').replace(/\D/g,'');
   const nombre = c.clienteNombre || 'Cliente';
 
@@ -13065,8 +13065,8 @@ function abrirEmailCotizacion(id) {
     `  ${i+1}. ${it.descripcion||it.nombre||'—'} (x${it.cantidad}) - ${fmtL((it.precioFinal||0)*(it.cantidad||1))}`
   ).join('\n');
   const linkCot = c.tokenPublico
-    ? `https://cotizacion.focusstore.net/?t=${c.tokenPublico}`
-    : `https://cotizacion.focusstore.net/?id=${encodeURIComponent(c.numero||'')}`;
+    ? `https://eventas90.github.io/ventas-eventas90/cotizacion.html?t=${c.tokenPublico}`
+    : `https://eventas90.github.io/ventas-eventas90/cotizacion.html?id=${encodeURIComponent(c.numero||'')}`;
   const cuerpo = `Estimado/a ${c.clienteNombre||'cliente'},\n\nLe compartimos su cotización ${c.numero||''} de Focus Store.\n\n👉 Ver cotización en línea: ${linkCot}\n\nDetalle:\n${lineasItems}\n\nTotal: ${fmtL(c.total)}\nVálida hasta: ${fv}\n\nEn el link puede ver los precios, imágenes y desglose completo.\nPara cualquier consulta estamos a su disposición.\n\nSaludos,\nFocus Store\nfocusstore.net | +504 3287-6364`;
   document.getElementById('emailCotiBody').value = cuerpo;
   // Store id for PDF button
