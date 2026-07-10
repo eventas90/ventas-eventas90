@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<title>Registro de Envío – Focus Store</title>
+<meta name="description" content="Ingresa tus datos de envío para Focus Store"/>
+<meta name="robots" content="noindex,nofollow"/>
+<!-- CSP: solo permite recursos propios + Supabase -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; connect-src https://eqvzzfzydzrgwseirtmu.supabase.co; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'"/>
+<style>
+  :root {
+    --bg:      #0d0f14;
+    --bg2:     #151820;
+    --bg3:     #1c202c;
+    --card:    #1c2030;
+    --border:  rgba(255,255,255,.09);
+    --text:    #e8eaf0;
+    --muted:   #7b82a0;
+    --accent:  #3d6aff;
+    --accent2: #00c8a0;
+    --danger:  #ff4d6a;
+    --warn:    #ffb300;
+    --radius:  14px;
+    --radius2: 9px;
+    --font:    'Segoe UI',system-ui,sans-serif;
+    --shadow:  0 8px 32px rgba(0,0,0,.45);
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 0 0 60px;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: linear-gradient(135deg, #1a2040 0%, #0d0f14 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 22px 20px 18px;
+    text-align: center;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: blur(8px);
+  }
+  .header-logo {
+    font-size: 28px;
+    margin-bottom: 4px;
+  }
+  .header h1 {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -.3px;
+  }
+  .header p {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  /* ── Main container ── */
+  .container {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 24px 16px 0;
+  }
+
+  /* ── Section cards ── */
+  .section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
+  }
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  /* ── Form fields ── */
+  .field { margin-bottom: 13px; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 5px;
+    font-weight: 600;
+    letter-spacing: .2px;
+  }
+  .field label .req { color: var(--danger); margin-left: 2px; }
+  .field input,
+  .field textarea,
+  .field select {
+    width: 100%;
+    padding: 11px 13px;
+    background: var(--bg3);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius2);
+    color: var(--text);
+    font-size: 14px;
+    font-family: var(--font);
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+    -webkit-appearance: none;
+  }
+  .field input:focus,
+  .field textarea:focus,
+  .field select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(61,106,255,.18);
+  }
+  .field input::placeholder,
+  .field textarea::placeholder { color: var(--muted); opacity: .7; }
+  .field textarea { resize: vertical; min-height: 72px; }
+
+  /* Inline input + button (for maps) */
+  .field-with-btn {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .field-with-btn input { flex: 1; }
+  .btn-maps {
+    flex-shrink: 0;
+    padding: 11px 13px;
+    background: var(--bg3);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius2);
+    color: var(--accent2);
+    font-size: 18px;
+    cursor: pointer;
+    transition: background .2s, border-color .2s;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 46px;
+  }
+  .btn-maps:hover { background: rgba(0,200,160,.1); border-color: var(--accent2); }
+  .btn-maps:active { opacity: .7; }
+  .btn-maps:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* Maps hint */
+  .maps-hint {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* Address tabs */
+  .addr-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .addr-tab {
+    flex: 1;
+    padding: 9px 0;
+    background: var(--bg3);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius2);
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: all .2s;
+  }
+  .addr-tab.active {
+    background: rgba(61,106,255,.12);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* ── Submit button ── */
+  .btn-submit {
+    width: 100%;
+    padding: 16px;
+    background: linear-gradient(135deg, var(--accent) 0%, #5b85ff 100%);
+    border: none;
+    border-radius: var(--radius2);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    font-family: var(--font);
+    cursor: pointer;
+    transition: opacity .2s, transform .1s;
+    letter-spacing: .2px;
+    margin-top: 6px;
+  }
+  .btn-submit:hover { opacity: .92; }
+  .btn-submit:active { transform: scale(.98); }
+  .btn-submit:disabled { opacity: .6; cursor: not-allowed; transform: none; pointer-events: none; }
+  .btn-submit.loading {
+    background: linear-gradient(135deg, #555 0%, #777 100%);
+    opacity: 1;
+    pointer-events: none;
+    cursor: not-allowed;
+  }
+
+  /* ── Spinner ── */
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,.4);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+    vertical-align: middle;
+    margin-right: 7px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Success screen ── */
+  #successScreen {
+    display: none;
+    text-align: center;
+    padding: 48px 20px;
+  }
+  .success-icon {
+    font-size: 72px;
+    display: block;
+    margin-bottom: 20px;
+    animation: pop .5s cubic-bezier(.36,1.4,.64,1) both;
+  }
+  @keyframes pop {
+    from { transform: scale(0); opacity: 0; }
+    to   { transform: scale(1); opacity: 1; }
+  }
+  .success-title {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--accent2);
+    margin-bottom: 10px;
+  }
+  .success-body {
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1.6;
+    max-width: 340px;
+    margin: 0 auto 28px;
+  }
+  .success-ref {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius2);
+    padding: 12px 20px;
+    font-size: 13px;
+    color: var(--muted);
+    display: inline-block;
+    margin-bottom: 28px;
+  }
+  .success-ref strong { color: var(--text); }
+  .btn-nuevo {
+    padding: 13px 32px;
+    background: var(--bg3);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius2);
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: border-color .2s;
+  }
+  .btn-nuevo:hover { border-color: var(--accent); }
+
+  /* ── Error/info banners ── */
+  .banner {
+    padding: 12px 16px;
+    border-radius: var(--radius2);
+    font-size: 13px;
+    margin-bottom: 14px;
+    display: none;
+    gap: 8px;
+    align-items: flex-start;
+    line-height: 1.4;
+  }
+  .banner.show { display: flex; }
+  .banner.error   { background: rgba(255,77,106,.12); border: 1px solid rgba(255,77,106,.3); color: #ff8099; }
+  .banner.warning { background: rgba(255,179,0,.1);   border: 1px solid rgba(255,179,0,.3);  color: var(--warn); }
+
+  /* ── Security badge ── */
+  .security-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* ── Honeypot (must be visually hidden but accessible to bots) ── */
+  .hp-field {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<!-- ══ HEADER ══ -->
+<div class="header">
+  <div class="header-logo">📦</div>
+  <h1>Datos de Envío</h1>
+  <p>Focus Store · Formulario seguro</p>
+</div>
+
+<div class="container">
+
+  <!-- ══ SUCCESS SCREEN ══ -->
+  <div id="successScreen">
+    <span class="success-icon">✅</span>
+    <div class="success-title">¡Información guardada!</div>
+    <div class="success-body">
+      Tu información de envío fue guardada exitosamente.<br>
+      Nuestro equipo la usará para coordinar tu entrega. 🚀
+    </div>
+    <div class="success-ref">
+      Referencia: <strong id="successRef">—</strong>
+    </div>
+    <br>
+    <button class="btn-nuevo" onclick="reiniciarFormulario()">📝 Ingresar otro cliente</button>
+  </div>
+
+  <!-- ══ FORM ══ -->
+  <form id="envioForm" onsubmit="return false;" novalidate autocomplete="on">
+
+    <!-- Error banner -->
+    <div id="errBanner" class="banner error">
+      <span>⚠️</span>
+      <span id="errMsg">Error desconocido</span>
+    </div>
+
+    <!-- ── Datos personales ── -->
+    <div class="section">
+      <div class="section-title">👤 Datos del Cliente</div>
+
+      <div class="field">
+        <label>Nombre completo <span class="req">*</span></label>
+        <input id="fNombre" type="text" placeholder="Ej: Juan Pérez García"
+               maxlength="120" autocomplete="name" inputmode="text"/>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field" style="margin-bottom:0">
+          <label>Teléfono principal <span class="req">*</span></label>
+          <input id="fTel" type="tel" placeholder="Ej: 9999-9999"
+                 maxlength="20" autocomplete="tel" inputmode="tel"/>
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>Teléfono 2 (opcional)</label>
+          <input id="fTel2" type="tel" placeholder="Ej: 2222-2222"
+                 maxlength="20" autocomplete="tel" inputmode="tel"/>
+        </div>
+      </div>
+
+      <div class="field" style="margin-top:13px">
+        <label>Correo electrónico (opcional)</label>
+        <input id="fEmail" type="email" placeholder="Ej: juan@gmail.com"
+               maxlength="120" autocomplete="email" inputmode="email"/>
+      </div>
+
+      <div class="field">
+        <label>Ciudad <span class="req">*</span></label>
+        <input id="fCiudad" type="text" placeholder="Ej: Tegucigalpa, San Pedro Sula…"
+               maxlength="80" autocomplete="address-level2"/>
+      </div>
+    </div>
+
+    <!-- ── Direcciones ── -->
+    <div class="section">
+      <div class="section-title">🏠 Dirección de Entrega</div>
+
+      <!-- Tabs: Casa / Trabajo -->
+      <div class="addr-tabs">
+        <button type="button" class="addr-tab active" id="tabCasa"
+                onclick="switchAddr('casa')">🏠 Casa</button>
+        <button type="button" class="addr-tab" id="tabTrabajo"
+                onclick="switchAddr('trabajo')">🏢 Trabajo</button>
+      </div>
+
+      <!-- CASA -->
+      <div id="panelCasa">
+        <div class="field">
+          <label>Dirección de Casa</label>
+          <textarea id="fDirCasa" placeholder="Colonia, calle, número de casa, referencias…"
+                    maxlength="500" rows="3" autocomplete="street-address"></textarea>
+        </div>
+        <div class="field">
+          <label>📍 Ubicación Google Maps (opcional)</label>
+          <div class="field-with-btn">
+            <input id="fMapsCasa" type="url"
+                   placeholder="Se llenará automáticamente o pega el link aquí"
+                   maxlength="500" readonly/>
+            <button type="button" class="btn-maps" id="btnMapsCasa"
+                    onclick="captureLocation('casa')" title="Capturar mi ubicación actual">
+              📍
+            </button>
+          </div>
+          <div class="maps-hint">📌 Presiona 📍 para capturar tu ubicación GPS actual</div>
+        </div>
+      </div>
+
+      <!-- TRABAJO -->
+      <div id="panelTrabajo" style="display:none">
+        <div class="field">
+          <label>Dirección de Trabajo</label>
+          <textarea id="fDirTrabajo" placeholder="Edificio, piso, colonia, referencias…"
+                    maxlength="500" rows="3" autocomplete="street-address"></textarea>
+        </div>
+        <div class="field">
+          <label>📍 Ubicación Google Maps (opcional)</label>
+          <div class="field-with-btn">
+            <input id="fMapsTrabajo" type="url"
+                   placeholder="Se llenará automáticamente o pega el link aquí"
+                   maxlength="500" readonly/>
+            <button type="button" class="btn-maps" id="btnMapsTrabajo"
+                    onclick="captureLocation('trabajo')" title="Capturar mi ubicación actual">
+              📍
+            </button>
+          </div>
+          <div class="maps-hint">📌 Presiona 📍 para capturar tu ubicación GPS actual</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Observaciones ── -->
+    <div class="section">
+      <div class="section-title">💬 Notas de Envío (opcional)</div>
+      <div class="field" style="margin-bottom:0">
+        <textarea id="fObs" placeholder="Ej: Tocar timbre, preguntar por Juan, disponible en la tarde…"
+                  maxlength="500" rows="3"></textarea>
+      </div>
+    </div>
+
+    <!-- Honeypot (anti-bot) — invisible para humanos -->
+    <div class="hp-field" aria-hidden="true">
+      <label for="hp_website">Website</label>
+      <input id="hp_website" name="website" type="text" tabindex="-1" autocomplete="off"/>
+    </div>
+
+    <!-- ── Submit ── -->
+    <button type="submit" class="btn-submit" id="btnSubmit" onclick="enviarFormulario()">
+      📦 Guardar información de envío
+    </button>
+
+    <!-- Security badge -->
+    <div class="security-badge">
+      🔒 Información cifrada y protegida · Focus Store
+    </div>
+
+  </form>
+
+</div><!-- /container -->
+
+<!-- Supabase SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+'use strict';
+
+/* ══════════════════════════════════════════════
+   CONFIG
+══════════════════════════════════════════════ */
+const SUPA_URL  = 'https://eqvzzfzydzrgwseirtmu.supabase.co';
+const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxdnp6Znp5ZHpyZ3dzZWlydG11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMyOTY2MDAsImV4cCI6MjA5ODg3MjYwMH0.oitPJ2-jEdwin84wbzb6l0iN0XSpJi-FSsEY-gMqpDU';
+
+const sb = supabase.createClient(SUPA_URL, SUPA_ANON, {
+  auth: { persistSession: false, autoRefreshToken: false }
+});
+
+/* ══════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════ */
+let _lastSubmit  = 0;   // timestamp – simple rate-limit
+let _submitting  = false;
+let _addrTab     = 'casa';
+
+/* ══════════════════════════════════════════════
+   ADDRESS TABS
+══════════════════════════════════════════════ */
+function switchAddr(tab) {
+  _addrTab = tab;
+  document.getElementById('panelCasa').style.display    = tab === 'casa'    ? '' : 'none';
+  document.getElementById('panelTrabajo').style.display = tab === 'trabajo' ? '' : 'none';
+  document.getElementById('tabCasa').classList.toggle('active',    tab === 'casa');
+  document.getElementById('tabTrabajo').classList.toggle('active', tab === 'trabajo');
+}
+
+/* ══════════════════════════════════════════════
+   GOOGLE MAPS GEOLOCATION
+══════════════════════════════════════════════ */
+function captureLocation(tipo) {
+  const btn    = document.getElementById(tipo === 'casa' ? 'btnMapsCasa' : 'btnMapsTrabajo');
+  const input  = document.getElementById(tipo === 'casa' ? 'fMapsCasa'   : 'fMapsTrabajo');
+
+  if (!navigator.geolocation) {
+    showErr('Tu navegador no soporta geolocalización. Por favor pega el link de Maps manualmente.');
+    return;
+  }
+
+  btn.disabled  = true;
+  btn.textContent = '⏳';
+
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+      // Construir link directo a Google Maps con las coordenadas
+      const mapsUrl = `https://maps.google.com/?q=${lat},${lng}`;
+      input.value = mapsUrl;
+      input.style.borderColor = 'var(--accent2)';
+      btn.textContent = '✅';
+      setTimeout(() => { btn.disabled = false; btn.textContent = '📍'; }, 2000);
+    },
+    err => {
+      btn.disabled = false;
+      btn.textContent = '📍';
+      let msg = 'No se pudo obtener tu ubicación.';
+      if (err.code === 1) msg = 'Permiso de ubicación denegado. Por favor pega el link de Maps manualmente.';
+      if (err.code === 3) msg = 'Tiempo de espera agotado. Intenta de nuevo o pega el link manualmente.';
+      showErr(msg);
+    },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+  );
+}
+
+/* ══════════════════════════════════════════════
+   SANITIZE — strip control chars, normalize spaces
+══════════════════════════════════════════════ */
+function san(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '') // control chars
+    .replace(/\s+/g, ' ')
+    .trim()
+    .substring(0, 500);
+}
+
+function sanUrl(str) {
+  if (!str) return '';
+  const s = san(str);
+  // Only allow http(s) URLs
+  if (s && !/^https?:\/\//i.test(s)) return '';
+  return s.substring(0, 500);
+}
+
+/* ══════════════════════════════════════════════
+   SHOW / HIDE ERROR BANNER
+══════════════════════════════════════════════ */
+function showErr(msg) {
+  const b = document.getElementById('errBanner');
+  document.getElementById('errMsg').textContent = msg;
+  b.classList.add('show');
+  b.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function hideErr() {
+  document.getElementById('errBanner').classList.remove('show');
+}
+
+/* ══════════════════════════════════════════════
+   VALIDATE
+══════════════════════════════════════════════ */
+function validate() {
+  const nombre = san(document.getElementById('fNombre').value);
+  const tel    = san(document.getElementById('fTel').value);
+  const ciudad = san(document.getElementById('fCiudad').value);
+
+  if (!nombre) { showErr('El nombre completo es obligatorio.'); document.getElementById('fNombre').focus(); return null; }
+  if (nombre.length < 3) { showErr('El nombre debe tener al menos 3 caracteres.'); document.getElementById('fNombre').focus(); return null; }
+  if (!tel) { showErr('El teléfono principal es obligatorio.'); document.getElementById('fTel').focus(); return null; }
+  if (!ciudad) { showErr('La ciudad es obligatoria.'); document.getElementById('fCiudad').focus(); return null; }
+
+  const email = san(document.getElementById('fEmail').value);
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    showErr('El correo electrónico no tiene un formato válido.'); document.getElementById('fEmail').focus(); return null;
+  }
+
+  return {
+    nombre,
+    tel,
+    tel2:             san(document.getElementById('fTel2').value)    || null,
+    email:            email || null,
+    ciudad,
+    direccion_casa:   san(document.getElementById('fDirCasa').value)    || null,
+    maps_casa:        sanUrl(document.getElementById('fMapsCasa').value) || null,
+    direccion_trabajo:san(document.getElementById('fDirTrabajo').value)  || null,
+    maps_trabajo:     sanUrl(document.getElementById('fMapsTrabajo').value) || null,
+    observaciones:    san(document.getElementById('fObs').value)      || null,
+  };
+}
+
+/* ══════════════════════════════════════════════
+   MAIN SUBMIT
+══════════════════════════════════════════════ */
+async function enviarFormulario() {
+  if (_submitting) return;
+
+  // Honeypot check — bots fill this field
+  if (document.getElementById('hp_website').value) {
+    // Silently succeed (confuse bots)
+    showSuccess('envio_' + Date.now());
+    return;
+  }
+
+  // Client-side rate limit: 30 s between submits
+  const now = Date.now();
+  const diff = Math.ceil((30_000 - (now - _lastSubmit)) / 1000);
+  if (_lastSubmit > 0 && now - _lastSubmit < 30_000) {
+    showErr(`Por favor espera ${diff} segundo${diff !== 1 ? 's' : ''} antes de intentar de nuevo.`);
+    // start countdown update
+    const errEl = document.getElementById('errMsg');
+    let remaining = diff;
+    const iv = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) { clearInterval(iv); hideErr(); return; }
+      errEl.textContent = `Por favor espera ${remaining} segundo${remaining !== 1 ? 's' : ''} antes de intentar de nuevo.`;
+    }, 1000);
+    return;
+  }
+
+  hideErr();
+
+  const data = validate();
+  if (!data) return;
+
+  _submitting = true;
+  _lastSubmit = now;
+
+  const btn = document.getElementById('btnSubmit');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  btn.innerHTML = '<span class="spinner"></span> Guardando… por favor no cierres esta página';
+
+  try {
+    const id  = 'cli_' + Date.now();
+    const row = {
+      id,
+      nombre:            data.nombre,
+      tel:               data.tel,
+      tel2:              data.tel2,
+      email:             data.email,
+      ciudad:            data.ciudad,
+      // Keeps backward-compat direccion field = primera dirección disponible
+      direccion:         data.direccion_casa || data.direccion_trabajo || null,
+      direccion_casa:    data.direccion_casa,
+      maps_casa:         data.maps_casa,
+      direccion_trabajo: data.direccion_trabajo,
+      maps_trabajo:      data.maps_trabajo,
+      observaciones:     data.observaciones,
+      fecha_creado:      new Date().toISOString(),
+      updated_at:        new Date().toISOString(),
+    };
+
+    const { error } = await sb.from('clientes').insert(row);
+
+    if (error) {
+      // Duplicate ID (extreme edge case) — retry once with new timestamp
+      if (error.code === '23505') {
+        row.id = 'cli_' + (Date.now() + 1);
+        const { error: err2 } = await sb.from('clientes').insert(row);
+        if (err2) throw err2;
+      } else {
+        throw error;
+      }
+    }
+
+    showSuccess(id);
+
+  } catch (err) {
+    console.error('Error guardando:', err);
+    showErr('Ocurrió un error al guardar. Por favor verifica tu conexión e intenta de nuevo.');
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    btn.innerHTML = '📦 Guardar información de envío';
+    _submitting = false;
+    _lastSubmit = 0;
+  }
+}
+
+/* ══════════════════════════════════════════════
+   SUCCESS SCREEN
+══════════════════════════════════════════════ */
+function showSuccess(id) {
+  document.getElementById('envioForm').style.display      = 'none';
+  document.getElementById('successScreen').style.display  = 'block';
+  document.getElementById('successRef').textContent = id;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function reiniciarFormulario() {
+  // Reset all fields
+  ['fNombre','fTel','fTel2','fEmail','fCiudad',
+   'fDirCasa','fMapsCasa','fDirTrabajo','fMapsTrabajo','fObs',
+   'hp_website'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  // Reset map field colors
+  ['fMapsCasa','fMapsTrabajo'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.borderColor = '';
+  });
+  switchAddr('casa');
+  hideErr();
+
+  document.getElementById('successScreen').style.display = 'none';
+  document.getElementById('envioForm').style.display     = '';
+
+  const btn = document.getElementById('btnSubmit');
+  btn.disabled = false;
+  btn.classList.remove('loading');
+  btn.innerHTML = '📦 Guardar información de envío';
+
+  _submitting = false;
+  _lastSubmit = 0;
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  setTimeout(() => document.getElementById('fNombre').focus(), 300);
+}
+
+/* ══════════════════════════════════════════════
+   MAPS INPUT — allow paste (remove readonly for typing)
+══════════════════════════════════════════════ */
+['fMapsCasa','fMapsTrabajo'].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  // Allow manual paste/edit
+  el.addEventListener('focus', () => el.removeAttribute('readonly'));
+  el.addEventListener('blur',  () => {
+    // Re-validate URL on blur
+    el.value = sanUrl(el.value);
+    el.setAttribute('readonly', '');
+  });
+  el.addEventListener('paste', e => {
+    setTimeout(() => { el.value = sanUrl(el.value); }, 50);
+  });
+});
+
+/* ══════════════════════════════════════════════
+   ENTER key on inputs → next field
+══════════════════════════════════════════════ */
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const inputs = [...document.querySelectorAll('#envioForm input, #envioForm textarea, #envioForm select')].filter(el => !el.closest('.hp-field'));
+  const idx = inputs.indexOf(document.activeElement);
+  if (idx >= 0 && idx < inputs.length - 1) {
+    e.preventDefault();
+    inputs[idx + 1].focus();
+  }
+});
+</script>
+</body>
+</html>
