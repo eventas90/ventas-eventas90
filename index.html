@@ -10835,7 +10835,6 @@ async function cargarCombos(forzar = false) {
   if (_combosCargados && !forzar) return;
   try {
     const u = currentUser?.user || '';
-    // El RPC get_combos NO existe en este proyecto Supabase: combos queda [] en silencio
     const { data, error } = await sb.rpc('get_combos', { p_user: u });
     if (error) { combos = []; _combosCargados = true; console.warn('Combos no disponibles:', error.message); return; }
     if (!error && Array.isArray(data)) {
