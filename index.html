@@ -8672,7 +8672,7 @@ async function guardarVenta() {
     metodoEnvio:      metodoEnvio,
     promesaPago:      promesaPago,
     abonos:           [...vItemsAbonos],
-    saldoPendiente:   Math.max(0, total - vItemsAbonos.reduce((s,a)=>s+(a.monto||0),0)),
+    saldoPendiente:   Math.max(0, +(total - vItemsAbonos.reduce((s,a)=>s+(a.monto||0),0)).toFixed(2)),
     fechaRegistro: new Date().toISOString(),
     registradoPor: currentUser ? currentUser.nombre : '—',
     nota: vEditandoId ? ((ventas.find(x=>x.id===vEditandoId)||{}).nota||'') : '',
@@ -8682,7 +8682,7 @@ async function guardarVenta() {
   // Si una venta con saldo pendiente queda saldada → marcar como "Parcial - Liquidada"
   const ventaExistente = vEditandoId ? (ventas.find(x => x.id === vEditandoId) || {}) : {};
   const teniaSaldo = (ventaExistente.saldoPendiente || 0) > 0;
-  const esParcialLiquidada = venta.saldoPendiente === 0 && (teniaSaldo || venta.abonos.length > 0);
+  const esParcialLiquidada = venta.saldoPendiente < 0.01 && (teniaSaldo || venta.abonos.length > 0);
   venta.metodoPagoLabel = esParcialLiquidada
     ? 'Parcial - Liquidada'
     : ((parametros.metodosPago||[]).find(m=>m.id===metodoPagoId)?.label || metodoPagoId);
