@@ -10357,14 +10357,58 @@ function _despachoHoyISO() {
   const d = new Date(); const p = n => String(n).padStart(2,'0');
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
 }
-function _despachoLog() {
-  const l = parametros.despachoLog;
-  return (l && typeof l === 'object') ? l : {};
+// Estado de despacho por producto (fuente: tabla despacho_registros, no un blob).
+// Clave = producto_key; valor = { inv, wix, wixStock, sinInv }. Se recarga en cada
+// render y por realtime, para que varias personas despachen a la vez sin pisarse.
+let despachoRegistros = {};
+let _despachoFechaCargada = null;
+let _despachoRealtimeOn = false;
+
+async function cargarDespachoRegistros(fecha) {
+  try {
+    const { data, error } = await sb.rpc('get_despacho', { p_fecha: fecha });
+    if (error) { console.warn('get_despacho:', error.message); return; }
+    const map = {};
+    (data || []).forEach(r => {
+      map[r.producto_key] = { inv: r.inv||0, wix: r.wix||0, wixStock: r.wix_stock, sinInv: !!r.sin_inv };
+    });
+    despachoRegistros = map;
+    _despachoFechaCargada = fecha;
+  } catch(e) { console.warn('get_despacho:', e); }
 }
 
-// Agrupa los productos vendidos en una fecha. Estado de descuento desde parametros.despachoLog
+function _despachoPanelVisible() {
+  const panel = document.getElementById('vPanelDespacho');
+  return !!(panel && panel.style.display !== 'none');
+}
+
+function iniciarRealtimeDespacho() {
+  if (_despachoRealtimeOn) return;
+  _despachoRealtimeOn = true;
+  // 1) Realtime (instantáneo si la seguridad de filas lo permite)
+  try {
+    sb.channel('despacho_registros_rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'despacho_registros' }, async () => {
+        if (_despachoPanelVisible()) {
+          const fecha = (document.getElementById('despFecha')||{}).value || _despachoHoyISO();
+          await cargarDespachoRegistros(fecha);
+          renderDespachoDia();
+        }
+      })
+      .subscribe();
+  } catch(e) { console.warn('realtime despacho:', e); }
+  // 2) Respaldo por sondeo cada 8s: solo re-renderiza si algo cambió (otro usuario descontó)
+  setInterval(async () => {
+    if (!_despachoPanelVisible()) return;
+    const fecha = (document.getElementById('despFecha')||{}).value || _despachoHoyISO();
+    const antes = JSON.stringify(despachoRegistros);
+    await cargarDespachoRegistros(fecha);
+    if (JSON.stringify(despachoRegistros) !== antes) renderDespachoDia();
+  }, 8000);
+}
+
+// Agrupa los productos vendidos en una fecha. Estado de descuento desde despachoRegistros (tabla).
 function getDespachoGrupos(fecha) {
-  const log = _despachoLog();
   const map = {};
   (ventas||[]).forEach(v => {
     if (((v.fecha||'')+'').slice(0,10) !== fecha) return;
@@ -10387,7 +10431,7 @@ function getDespachoGrupos(fecha) {
     });
   });
   Object.values(map).forEach(g => {
-    const e = log[fecha + '|' + g.key] || {};
+    const e = despachoRegistros[g.key] || {};
     g.invHecho = Number(e.inv||0);
     g.wixHecho = Number(e.wix||0);
     g.wixStock = e.wixStock;
@@ -10398,13 +10442,15 @@ function getDespachoGrupos(fecha) {
   return Object.values(map).sort((a,b) => (b.pendInv - a.pendInv) || a.nombre.localeCompare(b.nombre));
 }
 
-function renderDespachoDia() {
+async function renderDespachoDia() {
   const cat = document.getElementById('despCatalogo');
   const man = document.getElementById('despManual');
   const kpi = document.getElementById('despKpi');
   const res = document.getElementById('despResumen');
   if (!cat) return;
   const fecha = (document.getElementById('despFecha')||{}).value || _despachoHoyISO();
+  iniciarRealtimeDespacho();
+  if (_despachoFechaCargada !== fecha || despachoRegistros.__stale) await cargarDespachoRegistros(fecha);
   const puede = ['admin','gerencia'].includes(currentUser?.rol);
 
   const grupos   = getDespachoGrupos(fecha);
@@ -10507,55 +10553,47 @@ async function despachoDescontarTodo(key) {
   if (!g) { renderDespachoDia(); return; }
   if (!g.prod) { showToast('⚠️ No está en el catálogo. Vincúlalo primero.','warn'); return; }
   const p = productos.find(x => x.id === g.prod.id);
-  const stockAnt = parseInt(p.cantidad)||0;
   const soloWix = g.pendInv <= 0;
-  const nuevo = soloWix ? stockAnt : stockAnt - g.pendInv;
-  const aviso = nuevo < 0 ? `\n\n⚠️ El stock quedaría NEGATIVO (${nuevo}). Verifica si vendiste más de lo registrado en inventario.` : '';
   const msj = soloWix
-    ? `Reenviar el stock actual (${stockAnt}) de:\n"${g.prod.producto}"\na la tienda Wix`
-    : `Descontar ${g.pendInv} unidad(es) de:\n"${g.prod.producto}"\n\nStock: ${stockAnt} → ${nuevo}${aviso}\n\nY actualizar Wix con el stock nuevo.`;
+    ? `Reenviar el stock actual de:\n"${g.prod.producto}"\na la tienda Wix`
+    : `Descontar ${g.pendInv} unidad(es) de:\n"${g.prod.producto}"\n\nY actualizar Wix con el stock nuevo.`;
   if (!confirm(msj)) return;
   mostrarCargando(soloWix ? '🛒 Enviando stock a Wix...' : '📦 Descontando inventario y actualizando Wix...');
   try {
+    // El servidor decide (claim atómico) cuánto descontar realmente: se envía el total vendido.
     const res = await fetch(`${SUPABASE_URL}/functions/v1/despacho-externo`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SUPABASE_KEY },
-      body: JSON.stringify({ usuario: currentUser?.user || '', producto_id: g.prod.id, sku: g.sku || '', cantidad: soloWix ? 0 : g.pendInv, aplicar_wix: true })
+      body: JSON.stringify({ usuario: currentUser?.user || '', producto_key: g.key, producto_id: g.prod.id, sku: g.sku || '', cantidad: g.vendido, fecha, aplicar_wix: true })
     });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
-    p.cantidad = data.stock_nuevo;
-    const log = _despachoLog();
-    const entrada = Object.assign({}, log[fecha + '|' + g.key], { inv: g.vendido, invTs: new Date().toISOString(), invBy: currentUser?.nombre||'' });
-    if (data.wix && data.wix.ok) { entrada.wix = g.vendido; entrada.wixStock = data.wix.stock_wix; entrada.wixTs = new Date().toISOString(); }
-    log[fecha + '|' + g.key] = entrada;
-    parametros.despachoLog = log;
-    await sbSaveParametro('despachoLog', log);
-    if (!soloWix && typeof addHistorial === 'function') addHistorial(`Inventario descontado por venta: ${g.prod.producto} −${g.pendInv} (stock ${stockAnt}→${data.stock_nuevo})`, 'Ventas');
+    if (typeof data.stock_nuevo === 'number') p.cantidad = data.stock_nuevo;
+    if (!soloWix && data.delta_descontado > 0 && typeof addHistorial === 'function') {
+      addHistorial(`Inventario descontado por venta: ${g.prod.producto} −${data.delta_descontado} (stock → ${data.stock_nuevo})`, 'Ventas');
+    }
     ocultarCargando();
-    if (data.wix && data.wix.ok) showToast(`✅ ${soloWix ? '' : g.pendInv + ' uds descontadas — '}Inventario: ${data.stock_nuevo} · Wix: ${data.wix.stock_wix}`,'success',6000);
-    else showToast(`✅ Inventario: ${data.stock_nuevo} · ⚠️ Wix: ${(data.wix && data.wix.error) || 'no sincronizado'}`,'warn',8000);
+    const wixTxt = data.wix && data.wix.ok ? ` · Wix: ${data.wix.stock_wix}` : (data.wix ? ` · ⚠️ Wix: ${data.wix.error}` : '');
+    if (data.ya_estaba) showToast(`ℹ️ Ya estaba descontado por otro usuario — Inventario: ${data.stock_nuevo}${wixTxt}`,'info',6000);
+    else showToast(`✅ ${soloWix ? 'Wix actualizado' : data.delta_descontado + ' uds descontadas'} — Inventario: ${data.stock_nuevo}${wixTxt}`,'success',6000);
   } catch(e) { ocultarCargando(); showToast('❌ '+e.message,'error',7000); }
+  await cargarDespachoRegistros(fecha);
   renderDespachoDia();
 }
 
 async function despachoMarcarSinInv(key) {
   const fecha = (document.getElementById('despFecha')||{}).value || _despachoHoyISO();
-  const log = _despachoLog();
-  log[fecha + '|' + key] = Object.assign({}, log[fecha + '|' + key], { sinInv: true });
-  parametros.despachoLog = log;
-  try { await sbSaveParametro('despachoLog', log); showToast('✓ Marcado sin inventario','success'); }
+  try { const { error } = await sb.rpc('set_despacho_sininv', { p_fecha: fecha, p_key: key, p_valor: true }); if (error) throw error; showToast('✓ Marcado sin inventario','success'); }
   catch(e) { showToast('❌ '+e.message,'error'); }
+  await cargarDespachoRegistros(fecha);
   renderDespachoDia();
 }
 
 async function despachoDeshacerSinInv(key) {
   const fecha = (document.getElementById('despFecha')||{}).value || _despachoHoyISO();
-  const log = _despachoLog();
-  if (log[fecha + '|' + key]) { delete log[fecha + '|' + key].sinInv; }
-  parametros.despachoLog = log;
-  try { await sbSaveParametro('despachoLog', log); }
+  try { const { error } = await sb.rpc('set_despacho_sininv', { p_fecha: fecha, p_key: key, p_valor: false }); if (error) throw error; }
   catch(e) { showToast('❌ '+e.message,'error'); }
+  await cargarDespachoRegistros(fecha);
   renderDespachoDia();
 }
 
