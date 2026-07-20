@@ -1958,6 +1958,24 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
           <!-- Columna izquierda: datos + productos -->
           <div style="display:flex;flex-direction:column;gap:16px">
 
+            <style>
+              /* Nueva Venta — ajustes de diseño */
+              #vEnvioPagoGrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+              @media(max-width:820px){#vEnvioPagoGrid{grid-template-columns:1fr}}
+              /* Cliente: fila del cliente seleccionado un poco más grande */
+              #vClienteChip{padding:13px 18px !important}
+              #vClienteChip>span:first-child{font-size:16px !important;font-weight:800}
+              #vClienteChip #vClienteChipNombre{font-size:16px}
+              /* Cliente: campos más compactos y pegados */
+              #vCardCliente .form-grid{gap:8px 14px}
+              #vCardCliente .form-field label{font-size:10px;margin-bottom:2px;letter-spacing:.3px}
+              #vCardCliente .form-field input,#vCardCliente .form-field textarea{padding:7px 11px;font-size:12.5px}
+              /* Productos de la venta: más grande (lo más importante) */
+              #vCardProductos .card-title{font-size:18px}
+              #vProdBuscar{padding:15px 18px !important;font-size:15.5px !important}
+              #vCardProductos{border:1px solid var(--border2)}
+            </style>
+
             <!-- Datos del cliente -->
             <div class="card" id="vCardCliente">
               <div class="card-header" style="margin-bottom:10px">
@@ -2036,9 +2054,11 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
               </div>
             </div>
 
+            <!-- Envío + Pago en 2 columnas (compacto) -->
+            <div id="vEnvioPagoGrid">
             <!-- Método de Envío -->
             <div class="card" id="vCardEnvio">
-              <div class="card-header" style="margin-bottom:14px">
+              <div class="card-header" style="margin-bottom:10px">
                 <div class="card-title">🚚 Método de Envío</div>
               </div>
               <div class="form-field field-full">
@@ -2050,7 +2070,7 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
             </div>
 
             <!-- Banner modo abono (solo visible en modo abono) -->
-            <div id="vBannerAbono" style="display:none;padding:14px 18px;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.4);border-radius:8px;margin-bottom:4px">
+            <div id="vBannerAbono" style="display:none;padding:14px 18px;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.4);border-radius:8px;margin-bottom:4px;grid-column:1/-1">
               <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
                 <div>
                   <div style="font-size:13px;font-weight:700;color:var(--gold)">✏️ Modo Ingreso de Abono</div>
@@ -2065,7 +2085,7 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
 
             <!-- Método de Pago -->
             <div class="card" id="vCardPago">
-              <div class="card-header" style="margin-bottom:14px">
+              <div class="card-header" style="margin-bottom:10px">
                 <div class="card-title">💳 Método de Pago</div>
               </div>
               <div class="form-grid fg2" style="gap:12px">
@@ -2103,6 +2123,7 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
                 </div>
               </div>
             </div>
+            </div><!-- /vEnvioPagoGrid -->
 
             <!-- Productos de la venta -->
             <div class="card" id="vCardProductos">
