@@ -12882,6 +12882,7 @@ function imprimirCotizacion(id) {
   const direccion = parametros.direccion || 'Plaza Premier, 2do nivel · Col. Humuya · Contiguo a CEUTEC';
   const telEmp    = parametros.tel       || '+504 9916-9059';
   const emailEmp  = parametros.email     || 'ventas@focusstore.net';
+  const rtnEmp    = parametros.rtnEmpresa || '08019021271494';
 
   // ── Vendedor / firma / sello ──────────────────────────────────────────
   const vendedorFirma = c.vendedorNombre || currentUser?.nombre || '—';
@@ -13015,7 +13016,8 @@ td{padding:5px 8px;font-size:11.5px;border-bottom:1px solid #e8e8e8;vertical-ali
       <div class="slogan">${slogan}</div>
       <div class="addr">
         📍 ${direccion}<br>
-        📞 ${telEmp} &nbsp;·&nbsp; ✉️ ${emailEmp}
+        📞 ${telEmp} &nbsp;·&nbsp; ✉️ ${emailEmp}<br>
+        🧾 RTN: ${rtnEmp}
       </div>
     </div>
   </div>
