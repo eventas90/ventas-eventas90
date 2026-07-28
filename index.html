@@ -5997,9 +5997,9 @@ async function guardarParametros() {
 function addHistorial(msg, tipo) {
   const entry = {
     msg, tipo,
-    user: currentUser.nombre,
+    user: currentUser?.nombre || '',
     time: new Date().toLocaleString('es-HN'),
-    rol:  currentUser.rol
+    rol:  currentUser?.rol || ''
   };
   historial.unshift(entry);
   if(historial.length>200) historial.pop();
@@ -12509,18 +12509,27 @@ async function toggleSilenciarCot(id) {
   } catch(e) { showToast('❌ Error: '+e.message,'error'); }
 }
 
-function convertirAVenta(id) {
+async function convertirAVenta(id) {
   const c=cotizaciones.find(x=>x.id===id); if(!c) return;
   if (c.estado==='convertida') { showToast('⚠️ Esta cotización ya fue convertida a venta','warn'); return; }
   _cotizacionOrigenId=id;
   showTab('ventas');
   vShowSub('nueva');
-  setTimeout(()=>{
-    document.getElementById('vClienteNombre').value    = c.clienteNombre  || '';
-    document.getElementById('vClienteCiudad').value    = c.clienteCiudad  || '';
-    document.getElementById('vClienteTel').value       = c.clienteTel     || '';
-    document.getElementById('vClienteEmail').value     = c.clienteEmail   || '';
-    document.getElementById('vObservaciones').value    = c.observaciones  || '';
+  setTimeout(async ()=>{
+    // ── Cliente: seleccionar el cliente REAL (con su dirección). Si no existe, crearlo desde la cotización.
+    if (typeof limpiarCliente==='function') limpiarCliente();
+    let match=null;
+    try { match=_buscarClienteDuplicado({ nombre:c.clienteNombre, tel:c.clienteTel }, null); } catch(e){}
+    if (match && match.cliente) {
+      seleccionarCliente(match.cliente.id, true);
+    } else if ((c.clienteNombre||'').trim()) {
+      const nuevo = { id:'cli_'+Date.now(), nombre:c.clienteNombre||'', ciudad:c.clienteCiudad||'', tel:c.clienteTel||'',
+        tel2:'', email:c.clienteEmail||'', rtn:c.clienteRTN||'', direccion:'', direccionCasa:'', observaciones:'', fechaCreado:new Date().toISOString() };
+      clientes.push(nuevo);
+      try { await sbSaveCliente(nuevo); } catch(e){ console.warn('Cliente de cotización no guardado:', e.message); }
+      seleccionarCliente(nuevo.id, true);
+    }
+    document.getElementById('vObservaciones').value = c.observaciones || '';
     // Las cotizaciones no guardan costo: buscarlo en el catálogo para que la utilidad y comisión salgan correctas
     vItemsActuales=(c.items||[]).map(it=>{
       const p = it.productoId ? productos.find(x=>x.id===it.productoId) : null;
@@ -12534,7 +12543,8 @@ function convertirAVenta(id) {
     const _vdb2=document.getElementById('vDescTipoBtn'); if(_vdb2){const t=c.descuentoTipo||'%';_vdb2.textContent=t;_vdb2.style.color=t==='L'?'var(--accent3)':'var(--accent4)';}
     const _vdr2=document.getElementById('vResDescRow');  if(_vdr2) _vdr2.style.display=c.descuento>0?'flex':'none';
     calcResumenVenta();
-    showToast(`📋 Cotización ${c.numero} cargada → completa el método de pago y envío`,'success',6000);
+    const faltaDir = (vTipoVenta==='formal' && !(document.getElementById('vClienteDireccion').value||'').trim());
+    showToast(`📋 Cotización ${c.numero} cargada → completa método de pago y envío${faltaDir?' · ⚠️ falta la dirección (✏️ Editar) o marca la venta como informal':''}`,'success',7500);
   },300);
 }
 
