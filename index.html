@@ -10580,25 +10580,46 @@ async function despachoDescontarTodo(key) {
     : `Descontar ${g.pendInv} unidad(es) de:\n"${g.prod.producto}"\n\nY actualizar Wix con el stock nuevo.`;
   if (!confirm(msj)) return;
   mostrarCargando(soloWix ? '🛒 Enviando stock a Wix...' : '📦 Descontando inventario y actualizando Wix...');
-  try {
-    // El servidor decide (claim atómico) cuánto descontar realmente: se envía el total vendido.
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/despacho-externo`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SUPABASE_KEY },
-      body: JSON.stringify({ usuario: currentUser?.user || '', producto_key: g.key, producto_id: g.prod.id, sku: g.sku || '', cantidad: g.vendido, fecha, aplicar_wix: true })
-    });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+  const payload = JSON.stringify({ usuario: currentUser?.user || '', producto_key: g.key, producto_id: g.prod.id, sku: g.sku || '', cantidad: g.vendido, fecha, aplicar_wix: true });
+  // El candado del servidor es idempotente → se puede reintentar sin duplicar descuentos.
+  let data = null, errMsg = null;
+  for (let intento = 1; intento <= 3; intento++) {
+    try {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 60000);
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/despacho-externo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SUPABASE_KEY },
+        body: payload, signal: ctrl.signal
+      });
+      clearTimeout(to);
+      const j = await res.json();
+      if (!res.ok || j.error) throw new Error(j.error || ('HTTP ' + res.status));
+      data = j; errMsg = null; break;
+    } catch(e) {
+      errMsg = (e.name === 'AbortError') ? 'La operación tardó demasiado' : (e.message || 'Error de red');
+      if (intento < 3) { mostrarCargando(`🔄 Reintentando (${intento+1}/3)...`); await new Promise(r => setTimeout(r, 1500*intento)); }
+    }
+  }
+  ocultarCargando();
+  await cargarDespachoRegistros(fecha);
+  if (data) {
     if (typeof data.stock_nuevo === 'number') p.cantidad = data.stock_nuevo;
     if (!soloWix && data.delta_descontado > 0 && typeof addHistorial === 'function') {
       addHistorial(`Inventario descontado por venta: ${g.prod.producto} −${data.delta_descontado} (stock → ${data.stock_nuevo})`, 'Ventas');
     }
-    ocultarCargando();
     const wixTxt = data.wix && data.wix.ok ? ` · Wix: ${data.wix.stock_wix}` : (data.wix ? ` · ⚠️ Wix: ${data.wix.error}` : '');
     if (data.ya_estaba) showToast(`ℹ️ Ya estaba descontado por otro usuario — Inventario: ${data.stock_nuevo}${wixTxt}`,'info',6000);
     else showToast(`✅ ${soloWix ? 'Wix actualizado' : data.delta_descontado + ' uds descontadas'} — Inventario: ${data.stock_nuevo}${wixTxt}`,'success',6000);
-  } catch(e) { ocultarCargando(); showToast('❌ '+e.message,'error',7000); }
-  await cargarDespachoRegistros(fecha);
+  } else {
+    // Falló tras 3 intentos. Pero el descuento pudo haberse completado en el servidor (candado idempotente).
+    const e = despachoRegistros[g.key] || {};
+    if (!soloWix && (e.inv||0) >= g.vendido) {
+      showToast(`✅ El descuento sí quedó registrado (hubo un corte de red, pero se completó).`,'success',7000);
+    } else {
+      showToast(`❌ No se pudo completar (${errMsg}). Revisa tu conexión y vuelve a intentar.`,'error',8000);
+    }
+  }
   renderDespachoDia();
 }
 
