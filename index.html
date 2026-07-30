@@ -7877,6 +7877,8 @@ function editarClienteDesdeVenta() {
 function seleccionarConsumidorFinal() {
   let cf = clientes.find(c => (c.nombre||'').trim().toLowerCase() === 'consumidor final');
   if (!cf) {
+    // Solo se crea si la lista de clientes ya cargó (si no, evitamos generar un duplicado)
+    if (!clientes.length) return;
     cf = { id: 'cli_consumidor_final', nombre: 'Consumidor Final', ciudad: '', tel: '', tel2: '', email: '', rtn: '', direccion: '', observaciones: '', fechaCreado: new Date().toISOString() };
     clientes.push(cf);
     sbSaveCliente(cf).catch(e => console.warn('No se pudo guardar Consumidor Final:', e.message));
@@ -8628,7 +8630,13 @@ async function guardarVenta() {
       clienteId = null;
     }
   } else {
-    // Respaldo legacy: crear cliente mínimo desde los campos visibles
+    // Respaldo legacy: reutilizar un cliente existente antes de crear uno nuevo
+    // (evita duplicados, sobre todo de "Consumidor Final")
+    let yaExiste = null;
+    try { yaExiste = _buscarClienteDuplicado({ nombre, tel, tel2: (document.getElementById('vClienteTel2').value||'').trim() }, null); } catch(e) {}
+    if (yaExiste && yaExiste.cliente) {
+      clienteId = yaExiste.cliente.id;
+    } else {
     clienteId = 'cli_' + Date.now();
     const clienteObj = {
       id: clienteId, nombre, direccion, ciudad, tel,
@@ -8642,6 +8650,7 @@ async function guardarVenta() {
     } catch(e) {
       console.warn('⚠️ Cliente no guardado en Supabase:', e.message);
       clienteId = null;
+    }
     }
   }
 
