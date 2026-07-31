@@ -2319,6 +2319,17 @@ async function guardarVenta() {
 
   // Guardar/actualizar cliente
   let clienteId = vClienteId;
+  if (!clienteId) {
+    // Reutilizar un cliente existente con el mismo nombre (o RTN) antes de crear uno nuevo.
+    // Evita duplicados (p. ej. "Consumidor Final") y que la venta apunte a un cliente inexistente.
+    const norm = s => (s||'').trim().toLowerCase();
+    const rtnN = (rtn||'').replace(/\D/g,'');
+    const ya = (clientes||[]).find(c =>
+      norm(c.nombre) === norm(nombre) ||
+      (rtnN.length >= 13 && (c.rtn||'').replace(/\D/g,'') === rtnN)
+    );
+    if (ya) clienteId = ya.id;
+  }
   const clienteObj = {
     id:          clienteId || ('cli_' + Date.now()),
     nombre,
@@ -2395,10 +2406,25 @@ async function guardarVenta() {
 
   showLoading('💾 Guardando venta...');
   try {
-    // Guardar cliente primero
-    try { await sbSaveCliente(clienteObj); } catch(e) { console.warn('Cliente no guardado:', e.message); }
+    // Guardar cliente primero. Si no se puede guardar, la venta se registra SIN
+    // vincularlo (el nombre queda igual) para no romper la relación con clientes.
+    try {
+      await sbSaveCliente(clienteObj);
+    } catch(e) {
+      console.warn('Cliente no guardado:', e.message);
+      venta.clienteId = null;
+    }
 
-    await sbSaveVenta(venta);
+    try {
+      await sbSaveVenta(venta);
+    } catch(e) {
+      // Si el cliente vinculado ya no existe (lista desactualizada), guardar la venta sin vincularlo
+      if (/foreign key|ventas_cliente_id_fkey/i.test(e.message||'') && venta.clienteId) {
+        console.warn('Cliente inexistente, se guarda la venta sin vincular:', venta.clienteId);
+        venta.clienteId = null;
+        await sbSaveVenta(venta);
+      } else { throw e; }
+    }
 
     // Actualizar estado local
     if (vEditandoId) {
