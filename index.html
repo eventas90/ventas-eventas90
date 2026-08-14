@@ -1942,15 +1942,15 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
           <span style="font-size:13px;font-weight:700;color:var(--text2)">Tipo de Venta:</span>
           <div style="display:flex;gap:6px">
             <button id="vBtnFormal" onclick="setTipoVenta('formal')"
-              style="padding:7px 20px;border-radius:8px;border:none;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;background:var(--accent);color:#fff">
+              style="padding:7px 20px;border-radius:8px;border:1px solid var(--border);font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;background:transparent;color:var(--text2)">
               🧾 Formal
             </button>
             <button id="vBtnInformal" onclick="setTipoVenta('informal')"
-              style="padding:7px 20px;border-radius:8px;border:1px solid var(--border);font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;background:transparent;color:var(--text2)">
+              style="padding:7px 20px;border-radius:8px;border:none;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;background:#f39c12;color:#000">
               🤝 Informal
             </button>
           </div>
-          <span id="vTipoVentaHint" style="font-size:11px;color:var(--text3);margin-left:4px">Con factura formal, RTN y datos completos</span>
+          <span id="vTipoVentaHint" style="font-size:11px;color:var(--text3);margin-left:4px">Venta rápida sin datos formales — consumidor final</span>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 380px;gap:20px;align-items:start">
@@ -6898,7 +6898,7 @@ let vItemsActuales = [];
 let vItemsAbonos   = [];   // [{_id, monto, fecha, nota, registradoPor}]
 let vClienteSelId  = null;
 let vEditandoId    = null;
-let vTipoVenta     = 'formal';
+let vTipoVenta     = 'informal';   // por defecto Informal; se cambia a Formal manualmente
 let _ventasCargadas  = false;
 let _ventasChannel   = null;
 let _ventasAutoTimer = null;
@@ -7258,6 +7258,7 @@ function vShowSub(sub) {
     if (panel) panel.style.display = s === sub ? '' : 'none';
     if (btn)   { btn.classList.toggle('btn-primary', s === sub); btn.classList.toggle('btn-ghost', s !== sub); }
   });
+  if (sub === 'nueva') setTipoVenta(vTipoVenta || 'informal');  // sincroniza botones y etiquetas
   if (sub === 'nueva' && !vClienteSelId && _ventasCargadas) seleccionarConsumidorFinal();
   if (sub === 'lista')     renderHistorialVentas();
   if (sub === 'reporte')   renderReporteVendedores();
@@ -8804,8 +8805,8 @@ function limpiarVenta() {
   if (banner) banner.style.display = 'none';
   const grid = document.querySelector('#vPanelNueva > div[style*="grid-template-columns"]');
   if (grid) grid.style.gridTemplateColumns = '1fr 380px';
-  // Reset tipo venta
-  setTipoVenta('formal');
+  // Reset tipo venta (por defecto Informal)
+  setTipoVenta('informal');
 }
 
 // ── Tipo de Venta (Formal / Informal) ────────────────────────────
