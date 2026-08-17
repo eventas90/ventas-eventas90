@@ -2383,6 +2383,8 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
                   <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left">CLIENTE</th>
                   <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left">VENDEDOR</th>
                   <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left">MÉTODO PAGO</th>
+                  <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:right">UTILIDAD</th>
+                  <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:right">ROI</th>
                   <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left">TIPO</th>
                   <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:center">ACCIONES</th>
                 </tr>
@@ -10271,6 +10273,8 @@ function renderReporteProductos() {
         cliente: v.clienteNombre || '—',
         vendedor: v.vendedorNombre || '—',
         metodoPago: v.metodoPago || '—',
+        metodoPagoLabel: v.metodoPagoLabel || '',
+        costo: 0, utilidad: Number(v.utilidadBruta || 0), roi: null,
         tipo: v.tipoVenta || 'formal'
       });
     } else {
@@ -10281,6 +10285,12 @@ function renderReporteProductos() {
         const qty   = Number(it.cantidad  || 1);
         const pUnit = Number(it.precioFinal || it.precioUnitario || 0);
         const sub   = qty * pUnit;
+        // Utilidad y ROI de la línea (misma fórmula que al guardar la venta)
+        const isvPct   = it.llevaISV ? Number(it.isvPct || 0) : 0;
+        const sinISV   = it.llevaISV ? pUnit / (1 + isvPct) : pUnit;
+        const costoU   = Number(it.costoLPS || 0);
+        const costoTot = costoU * qty;
+        const utilidad = (sinISV - costoU) * qty;
         filas.push({
           fecha, ventaId: v.id,
           sku, nombre: nom,
@@ -10288,6 +10298,10 @@ function renderReporteProductos() {
           cliente:    v.clienteNombre  || '—',
           vendedor:   v.vendedorNombre || '—',
           metodoPago: v.metodoPago     || '—',
+          metodoPagoLabel: v.metodoPagoLabel || '',
+          costo: costoTot,
+          utilidad,
+          roi: costoTot > 0 ? utilidad / costoTot : null,
           tipo: v.tipoVenta || 'formal'
         });
       });
@@ -10305,6 +10319,8 @@ function renderReporteProductos() {
   // KPIs
   const totUnidades  = filas.reduce((a,f) => a + f.cantidad, 0);
   const totIngresos  = filas.reduce((a,f) => a + f.subtotal, 0);
+  const totUtilidad  = filas.reduce((a,f) => a + (f.utilidad||0), 0);
+  const totCosto     = filas.reduce((a,f) => a + (f.costo||0), 0);
   const skusUnicos   = new Set(filas.map(f => f.sku === '—' ? f.nombre : f.sku)).size;
   const clientesUniq = new Set(filas.map(f => f.cliente)).size;
   const ventasUniq   = new Set(filas.map(f => f.ventaId)).size;
@@ -10313,6 +10329,7 @@ function renderReporteProductos() {
     <div class="stat-card"><div class="stat-label">Líneas de Detalle</div><div class="stat-value stat-blue">${filas.length.toLocaleString()}</div><div class="stat-sub">${ventasUniq} venta(s)</div></div>
     <div class="stat-card"><div class="stat-label">Unidades Vendidas</div><div class="stat-value stat-green">${totUnidades.toLocaleString()}</div></div>
     <div class="stat-card"><div class="stat-label">Total Ingresos</div><div class="stat-value stat-green">${fmtLPS(totIngresos)}</div></div>
+    <div class="stat-card"><div class="stat-label">Utilidad Bruta</div><div class="stat-value stat-gold">${fmtLPS(totUtilidad)}</div><div class="stat-sub">ROI ${totCosto>0?fmtPct(totUtilidad/totCosto):'—'}</div></div>
     <div class="stat-card"><div class="stat-label">Productos Únicos</div><div class="stat-value stat-gold">${skusUnicos}</div></div>
     <div class="stat-card"><div class="stat-label">Clientes</div><div class="stat-value stat-teal">${clientesUniq}</div></div>
   `;
@@ -10327,7 +10344,7 @@ function renderReporteProductos() {
   }
 
   if (!filas.length) {
-    body.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:32px;color:var(--text3)">Sin resultados para los filtros aplicados</td></tr>';
+    body.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:32px;color:var(--text3)">Sin resultados para los filtros aplicados</td></tr>';
     return;
   }
 
@@ -10336,6 +10353,12 @@ function renderReporteProductos() {
     : `<span style="background:rgba(61,106,255,.15);color:var(--accent);padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700">🧾 Formal</span>`;
   const pagoIcon = { efectivo:'💵', tarjeta:'💳', transferencia:'🏦', parcial:'📆', wix:'🛍️', otro:'💱' };
   const puedeEditar = ['admin','gerencia'].includes(currentUser?.rol);
+  // Nombre legible del método de pago (en vez del código interno mp_1778...)
+  const nombrePago = f => {
+    if (f.metodoPagoLabel) return f.metodoPagoLabel;
+    const m = (parametros.metodosPago||[]).find(x => x.id === f.metodoPago);
+    return m ? m.label : (f.metodoPago || '—');
+  };
 
   body.innerHTML = filas.map(f => `
     <tr style="border-bottom:1px solid var(--border2);transition:background .12s" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
@@ -10347,7 +10370,9 @@ function renderReporteProductos() {
       <td style="padding:8px 12px;font-size:13px;text-align:right;font-weight:800;color:var(--accent2)">${fmtLPS(f.subtotal)}</td>
       <td style="padding:8px 12px;font-size:12px;color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.cliente}">${f.cliente}</td>
       <td style="padding:8px 12px;font-size:12px;color:var(--text2)">${f.vendedor}</td>
-      <td style="padding:8px 12px;font-size:12px;white-space:nowrap">${(pagoIcon[f.metodoPago]||'💱')} ${f.metodoPago}</td>
+      <td style="padding:8px 12px;font-size:12px;white-space:nowrap;max-width:170px;overflow:hidden;text-overflow:ellipsis" title="${nombrePago(f)}">${(pagoIcon[f.metodoPago]||'💱')} ${nombrePago(f)}</td>
+      <td style="padding:8px 12px;font-size:13px;text-align:right;font-weight:700;color:${f.utilidad>0?'var(--green)':(f.utilidad<0?'var(--red)':'var(--text3)')}">${fmtLPS(f.utilidad)}</td>
+      <td style="padding:8px 12px;font-size:13px;text-align:right;font-weight:700;color:${f.roi==null?'var(--text3)':(f.roi>=0.3?'var(--green)':(f.roi>=0.15?'var(--gold)':'var(--red)'))}">${f.roi==null?'—':fmtPct(f.roi)}</td>
       <td style="padding:8px 12px;white-space:nowrap">${tipoBadge(f.tipo)}</td>
       <td style="padding:6px 10px;white-space:nowrap;text-align:center">
         <button onclick="verDetalleVenta('${f.ventaId}')"
@@ -10369,7 +10394,7 @@ function exportarReporteProductos() {
   if (!filas.length || filas[0].querySelector('td[colspan]')) {
     showToast('⚠️ No hay datos para copiar','warn'); return;
   }
-  const header = 'FECHA\tSKU\tPRODUCTO\tCANT.\tP. UNIT.\tSUBTOTAL\tCLIENTE\tVENDEDOR\tMÉT. PAGO\tTIPO';
+  const header = 'FECHA\tSKU\tPRODUCTO\tCANT.\tP. UNIT.\tSUBTOTAL\tCLIENTE\tVENDEDOR\tMÉT. PAGO\tUTILIDAD\tROI\tTIPO';
   // Exclude last column (acciones / buttons)
   const rows   = filas.map(tr => {
     const celdas = [...tr.querySelectorAll('td')];
