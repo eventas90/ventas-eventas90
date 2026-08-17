@@ -10784,15 +10784,17 @@ function _getDatosReporte() {
   const porVendedor = {};
   lista.forEach(v => {
     const key = v.vendedorId||'?';
-    if (!porVendedor[key]) porVendedor[key] = { nombre: v.vendedorNombre||'Sin vendedor', pct: v.pctComision||(parametros.comisionVentas||10), ventas:[], comision:0, utilidad:0, costo:0, porCobrar:0 };
+    if (!porVendedor[key]) porVendedor[key] = { nombre: v.vendedorNombre||'Sin vendedor', pct: v.pctComision||(parametros.comisionVentas||10), ventas:[], comision:0, utilidad:0, costo:0, utilidadCobrada:0, costoCobrado:0, porCobrar:0 };
     porVendedor[key].ventas.push(v);
     porVendedor[key].utilidad += v.utilidadBruta||0;
     porVendedor[key].costo    += (v.subtotalSinISV - (v.utilidadBruta||0) - (v.descuento||0));
   });
   todasParaComision.forEach(v => {
     const key = v.vendedorId||'?';
-    if (!porVendedor[key]) porVendedor[key] = { nombre: v.vendedorNombre||'Sin vendedor', pct: v.pctComision||(parametros.comisionVentas||10), ventas:[], comision:0, utilidad:0, costo:0, porCobrar:0 };
+    if (!porVendedor[key]) porVendedor[key] = { nombre: v.vendedorNombre||'Sin vendedor', pct: v.pctComision||(parametros.comisionVentas||10), ventas:[], comision:0, utilidad:0, costo:0, utilidadCobrada:0, costoCobrado:0, porCobrar:0 };
     porVendedor[key].comision += v.comision||0;
+    porVendedor[key].utilidadCobrada += v.utilidadBruta||0;
+    porVendedor[key].costoCobrado    += (v.subtotalSinISV - (v.utilidadBruta||0) - (v.descuento||0));
   });
   lista.filter(v => v.metodoPago==='parcial' && (v.saldoPendiente||0)>0).forEach(v => {
     const key = v.vendedorId||'?';
@@ -10864,7 +10866,7 @@ function pdfComisionVendedor() {
         <td class="right ${isParcial?'red':''}">${isParcial?fmtL(v.saldoPendiente):'—'}</td>
       </tr>`;
     }).join('');
-    const roi = r.costo > 0 ? (r.utilidad/r.costo*100).toFixed(1) : '—';
+    const roi = (r.costoCobrado||0) > 0 ? ((r.utilidadCobrada||0)/r.costoCobrado*100).toFixed(1) : '—';
     return `
     <div style="margin-bottom:24px;page-break-inside:avoid">
       <h2 style="background:#1a1a2e;color:#fff;padding:8px 12px;border-radius:4px 4px 0 0;margin:0">
@@ -10886,7 +10888,7 @@ function pdfComisionVendedor() {
         <tfoot><tr class="total-row">
           <td colspan="3">TOTAL</td>
           <td class="right green">${fmtL(totalVentas)}</td>
-          <td class="right">${fmtL(r.utilidad)}</td>
+          <td class="right">${fmtL(r.utilidadCobrada||0)}</td>
           <td class="right" style="color:#1a7a4a">${fmtL(r.comision)}</td>
           <td class="right red">${r.porCobrar>0?fmtL(r.porCobrar):'—'}</td>
         </tr></tfoot>
@@ -10920,20 +10922,20 @@ function pdfReporteEquipo() {
   const fmtL = n => 'L ' + (n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
   const totVentas   = lista.reduce((s,v)=>s+v.total,0);
-  const totUtilidad = lista.reduce((s,v)=>s+(v.utilidadBruta||0),0);
+  const totUtilidad = todasParaComision.reduce((s,v)=>s+(v.utilidadBruta||0),0);
   const totComision = todasParaComision.reduce((s,v)=>s+(v.comision||0),0);
-  const totCosto    = lista.reduce((s,v)=>s+(v.subtotalSinISV-(v.utilidadBruta||0)-(v.descuento||0)),0);
+  const totCosto    = todasParaComision.reduce((s,v)=>s+(v.subtotalSinISV-(v.utilidadBruta||0)-(v.descuento||0)),0);
   const totPorCobrar= lista.filter(v=>v.metodoPago==='parcial'&&(v.saldoPendiente||0)>0).reduce((s,v)=>s+(v.saldoPendiente||0),0);
   const roi         = totCosto > 0 ? (totUtilidad/totCosto*100).toFixed(1) : '—';
 
   const filasEquipo = rows.map(r => {
     const tv  = r.ventas.reduce((s,v)=>s+v.total,0);
-    const roi2= r.costo > 0 ? (r.utilidad/r.costo*100).toFixed(1)+'%' : '—';
+    const roi2= (r.costoCobrado||0) > 0 ? ((r.utilidadCobrada||0)/r.costoCobrado*100).toFixed(1)+'%' : '—';
     return `<tr>
       <td style="font-weight:700">${r.nombre}</td>
       <td class="center">${r.ventas.length}</td>
       <td class="right green">${fmtL(tv)}</td>
-      <td class="right">${fmtL(r.utilidad)}</td>
+      <td class="right">${fmtL(r.utilidadCobrada||0)}</td>
       <td class="right">${roi2}</td>
       <td class="right">${r.pct.toFixed(1)}%</td>
       <td class="right" style="color:#1a7a4a;font-weight:700">${fmtL(r.comision)}</td>
@@ -10954,7 +10956,7 @@ function pdfReporteEquipo() {
 <hr>
 <div class="kpi-grid">
   <div class="kpi"><div class="kpi-label">Total Vendido</div><div class="kpi-val green">${fmtL(totVentas)}</div></div>
-  <div class="kpi"><div class="kpi-label">Utilidad Bruta</div><div class="kpi-val blue">${fmtL(totUtilidad)}</div></div>
+  <div class="kpi"><div class="kpi-label">Utilidad Cobrada</div><div class="kpi-val blue">${fmtL(totUtilidad)}</div></div>
   <div class="kpi"><div class="kpi-label">ROI Promedio</div><div class="kpi-val">${roi}%</div></div>
   <div class="kpi"><div class="kpi-label">Total Comisiones</div><div class="kpi-val" style="color:#1a7a4a">${fmtL(totComision)}</div></div>
   <div class="kpi"><div class="kpi-label">Por Cobrar</div><div class="kpi-val ${totPorCobrar>0?'gold':''}">${fmtL(totPorCobrar)}</div></div>
@@ -10966,7 +10968,7 @@ function pdfReporteEquipo() {
 <table>
   <thead><tr>
     <th>Vendedor</th><th class="center"># Ventas</th><th class="right">Total Vendido</th>
-    <th class="right">Utilidad</th><th class="right">ROI</th><th class="right">% Com.</th>
+    <th class="right">Utilidad Cobrada</th><th class="right">ROI</th><th class="right">% Com.</th>
     <th class="right">Comisión</th><th class="right">Por Cobrar</th><th class="right">Ticket Prom.</th>
   </tr></thead>
   <tbody>${filasEquipo}</tbody>
