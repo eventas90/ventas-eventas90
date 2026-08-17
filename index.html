@@ -9937,7 +9937,7 @@ function renderReporteVendedores() {
   const porVendedor = {};
   lista.forEach(v => {
     const key = v.vendedorId || 'sin_vendedor';
-    if (!porVendedor[key]) porVendedor[key] = { nombre: v.vendedorNombre, ventas:[], totalVentas:0, totalComision:0, totalUtilidad:0, totalCosto:0, totalSinISV:0, totalCobradoSinISV:0 };
+    if (!porVendedor[key]) porVendedor[key] = { nombre: v.vendedorNombre, ventas:[], totalVentas:0, totalComision:0, totalUtilidad:0, totalCosto:0, utilidadCobrada:0, costoCobrado:0, totalSinISV:0, totalCobradoSinISV:0 };
     porVendedor[key].ventas.push(v);
     porVendedor[key].totalVentas   += v.total;
     porVendedor[key].totalSinISV   += (v.subtotalSinISV || 0);
@@ -9950,8 +9950,11 @@ function renderReporteVendedores() {
   // Sumar comisiones por vendedor usando la lista de comisiones del período
   todasParaComision.forEach(v => {
     const key = v.vendedorId || 'sin_vendedor';
-    if (!porVendedor[key]) porVendedor[key] = { nombre: v.vendedorNombre, ventas:[], totalVentas:0, totalComision:0, totalUtilidad:0, totalCosto:0, totalPorCobrar:0 };
+    if (!porVendedor[key]) porVendedor[key] = { nombre: v.vendedorNombre, ventas:[], totalVentas:0, totalComision:0, totalUtilidad:0, totalCosto:0, utilidadCobrada:0, costoCobrado:0, totalPorCobrar:0 };
     porVendedor[key].totalComision += v.comision;
+    // Utilidad que YA genera comisión (excluye créditos aún no cobrados)
+    porVendedor[key].utilidadCobrada += v.utilidadBruta;
+    porVendedor[key].costoCobrado    += (v.subtotalSinISV - v.utilidadBruta - (v.descuento || 0));
   });
   // Sumar saldo pendiente por vendedor
   lista.filter(v => v.metodoPago === 'parcial' && (v.saldoPendiente||0) > 0).forEach(v => {
@@ -10024,8 +10027,8 @@ function renderReporteVendedores() {
         <th style="text-align:right">Total Vendido</th>
         <th style="text-align:right;color:#64b4ff">Sin ISV</th>
         <th style="text-align:right;color:#00e0b0">✅ Cobrado sin ISV</th>
-        <th style="text-align:right">Utilidad Bruta</th>
-        <th style="text-align:right">ROI</th>
+        <th style="text-align:right" title="Solo ventas ya cobradas — base real de la comisión">✅ Utilidad Cobrada</th>
+        <th style="text-align:right" title="ROI sobre las ventas ya cobradas">ROI</th>
         <th style="text-align:right">% Comisión</th>
         <th style="text-align:right">Comisión Total</th>
         <th style="text-align:right;color:var(--gold)">⏳ Por Cobrar</th>
@@ -10035,7 +10038,9 @@ function renderReporteVendedores() {
         ${rows.map((r, idx) => {
           const pct       = r.ventas[0]?.pctComision || (parametros.comisionVentas||10);
           const ticket    = r.ventas.length ? r.totalVentas / r.ventas.length : 0;
-          const roi       = r.totalCosto > 0 ? r.totalUtilidad / r.totalCosto : 0;
+          // Utilidad/ROI sobre lo que YA genera comisión (excluye créditos pendientes)
+          const utilCom   = r.utilidadCobrada || 0;
+          const roi       = (r.costoCobrado||0) > 0 ? utilCom / r.costoCobrado : 0;
           const roiCls    = roi >= 0.3 ? 'var(--green)' : roi >= 0.2 ? 'var(--gold)' : 'var(--red)';
           const porCobrar = r.totalPorCobrar || 0;
           const safeKey   = encodeURIComponent(r.nombre);
@@ -10050,7 +10055,7 @@ function renderReporteVendedores() {
             <td style="text-align:right;color:var(--green);font-weight:700">${fmtLPS(r.totalVentas)}</td>
             <td style="text-align:right;color:#64b4ff;font-weight:600">${fmtLPS(r.totalSinISV||0)}</td>
             <td style="text-align:right;color:#00e0b0;font-weight:700">${fmtLPS(r.totalCobradoSinISV||0)}</td>
-            <td style="text-align:right;color:var(--accent)">${fmtLPS(r.totalUtilidad)}</td>
+            <td style="text-align:right;color:var(--accent)" title="Solo ventas ya cobradas — los créditos pendientes suman cuando el cliente termina de pagar">${fmtLPS(utilCom)}</td>
             <td style="text-align:right;font-weight:700;color:${roiCls}">${fmtPct(roi)}</td>
             <td style="text-align:right">${pct.toFixed(1)}%</td>
             <td style="text-align:right;color:var(--accent3);font-weight:700">${fmtLPS(r.totalComision)}</td>
