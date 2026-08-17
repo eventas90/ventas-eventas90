@@ -2383,8 +2383,8 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
                   <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left">CLIENTE</th>
                   <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left">VENDEDOR</th>
                   <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left">MÉTODO PAGO</th>
-                  <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:right">UTILIDAD</th>
-                  <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:right">ROI</th>
+                  <th id="thRPPUtilidad" onclick="rppOrdenar('utilidad')" title="Clic para ordenar por utilidad" style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:right;cursor:pointer;user-select:none">UTILIDAD</th>
+                  <th id="thRPPRoi" onclick="rppOrdenar('roi')" title="Clic para ordenar por ROI" style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:right;cursor:pointer;user-select:none">ROI</th>
                   <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:left">TIPO</th>
                   <th style="padding:9px 12px;font-size:11px;font-weight:700;color:var(--text3);text-align:center">ACCIONES</th>
                 </tr>
@@ -10242,6 +10242,19 @@ function vRPPSetPeriodo(periodo) {
   renderReporteProductos();
 }
 
+// Orden del Reporte por Producto (columnas Utilidad y ROI)
+let _rppSort = { col: null, dir: 'desc' };
+function rppOrdenar(col) {
+  if (_rppSort.col === col) {
+    // 1er clic: mayor→menor · 2do clic: menor→mayor · 3er clic: vuelve al orden por fecha
+    if (_rppSort.dir === 'desc') _rppSort.dir = 'asc';
+    else _rppSort = { col: null, dir: 'desc' };
+  } else {
+    _rppSort = { col, dir: 'desc' };
+  }
+  renderReporteProductos();
+}
+
 function renderReporteProductos() {
   const body    = document.getElementById('vRPPBody');
   const kpiEl   = document.getElementById('vRPPKpi');
@@ -10313,8 +10326,29 @@ function renderReporteProductos() {
     filas = filas.filter(f => f.sku.toLowerCase().includes(buscar) || f.nombre.toLowerCase().includes(buscar) || f.cliente.toLowerCase().includes(buscar));
   }
 
-  // Sort by fecha desc then nombre
-  filas.sort((a,b) => b.fecha.localeCompare(a.fecha) || a.nombre.localeCompare(b.nombre));
+  // Orden: por defecto fecha desc; o por la columna elegida (Utilidad / ROI)
+  if (_rppSort.col === 'utilidad' || _rppSort.col === 'roi') {
+    const signo = _rppSort.dir === 'desc' ? -1 : 1;
+    filas.sort((a,b) => {
+      const va = a[_rppSort.col], vb = b[_rppSort.col];
+      // Las líneas sin dato (ROI nulo) siempre al final
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return (va - vb) * signo || a.nombre.localeCompare(b.nombre);
+    });
+  } else {
+    filas.sort((a,b) => b.fecha.localeCompare(a.fecha) || a.nombre.localeCompare(b.nombre));
+  }
+  // Flechitas en los encabezados ordenables
+  [['utilidad','thRPPUtilidad','UTILIDAD'],['roi','thRPPRoi','ROI']].forEach(([col,id,txt]) => {
+    const th = document.getElementById(id);
+    if (th) {
+      const activo = _rppSort.col === col;
+      th.innerHTML = txt + (activo ? (_rppSort.dir === 'desc' ? ' ▼' : ' ▲') : ' <span style="opacity:.35">⇅</span>');
+      th.style.color = activo ? 'var(--accent)' : 'var(--text3)';
+    }
+  });
 
   // KPIs
   const totUnidades  = filas.reduce((a,f) => a + f.cantidad, 0);
