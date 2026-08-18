@@ -3109,12 +3109,20 @@ function rowToProducto(r) {
 // Pagina de 1000 en 1000 hasta recibir una página incompleta.
 async function cargarProductosAPI() {
   const LIMITE = 1000;
+  const TIMEOUT_MS = 25000;   // si la API de productos no responde, no bloquear la app
   let offset = 0;
   const filas = [];
   while (true) {
-    const resp = await fetch(`${SUPABASE_URL}/functions/v1/productos-externos?limit=${LIMITE}&offset=${offset}`, {
-      headers: { Authorization: 'Bearer ' + SUPABASE_KEY }
-    });
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    let resp;
+    try {
+      resp = await fetch(`${SUPABASE_URL}/functions/v1/productos-externos?limit=${LIMITE}&offset=${offset}`, {
+        headers: { Authorization: 'Bearer ' + SUPABASE_KEY }, signal: ctrl.signal
+      });
+    } catch (e) {
+      throw new Error(e.name === 'AbortError' ? 'La API de productos no respondió a tiempo' : (e.message || 'Error de red'));
+    } finally { clearTimeout(to); }
     if (!resp.ok) throw new Error('API productos HTTP ' + resp.status);
     const json = await resp.json();
     const pagina = Array.isArray(json?.datos) ? json.datos : [];
@@ -4064,6 +4072,8 @@ async function cargarDesdeSheetsYRenderizar() {
       if (prodsAPI.length > 0) productos = prodsAPI;
     } catch(eApi) {
       console.warn('⚠️ Productos API no disponibles:', eApi.message);
+      // La app sigue funcionando (ventas, cobros, clientes); solo el catálogo queda vacío
+      setTimeout(() => showToast('⚠️ No se pudo cargar el catálogo de productos (' + eApi.message + '). El resto del sistema funciona normal; reintenta con 🔄 en unos minutos.', 'warn', 10000), 800);
     }
 
     // ── Parámetros ──
