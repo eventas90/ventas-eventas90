@@ -13569,6 +13569,8 @@ window.addEventListener('DOMContentLoaded', async ()=>{
 // cuando el navegador sirve una versión vieja desde caché.
 function iniciarVerificadorVersion() {
   const STORAGE_KEY = '_appEtagLS';
+  const DESCARTADO  = '_appEtagIgnorado';
+  let etagServidor  = '';
 
   const mostrarBanner = () => {
     if (document.getElementById('versionBanner')) return; // ya visible
@@ -13584,15 +13586,23 @@ function iniciarVerificadorVersion() {
           <div style="font-size:13px;font-weight:700;color:#fff">Nueva versión disponible</div>
           <div style="font-size:12px;color:#8892aa;margin-top:2px">Recarga para obtener los últimos cambios</div>
         </div>
-        <button onclick="localStorage.removeItem('${STORAGE_KEY}'); location.href = location.pathname + '?v=' + Date.now()"
+        <button onclick="localStorage.removeItem('${STORAGE_KEY}'); localStorage.removeItem('${DESCARTADO}'); location.href = location.pathname + '?v=' + Date.now()"
           style="background:linear-gradient(135deg,#3d6aff,#2d5aef);color:#fff;border:none;border-radius:8px;
           padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;font-family:inherit">
           Actualizar
         </button>
-        <button onclick="this.closest('#versionBanner').remove()"
+        <button onclick="descartarBannerVersion()" title="No avisarme de nuevo por esta versión"
           style="background:none;border:none;color:#8892aa;cursor:pointer;font-size:18px;padding:0 2px;line-height:1">✕</button>
       </div>`;
     document.body.appendChild(banner);
+  };
+
+  // Cerrar con ✕ recuerda esta versión: no vuelve a avisar por ella.
+  // Sin esto el aviso reaparecía cada 5 minutos hasta pulsar "Actualizar".
+  window.descartarBannerVersion = () => {
+    try { if (etagServidor) localStorage.setItem(DESCARTADO, etagServidor); } catch(e) {}
+    const b = document.getElementById('versionBanner');
+    if (b) b.remove();
   };
 
   const _checkVersion = async () => {
@@ -13600,16 +13610,16 @@ function iniciarVerificadorVersion() {
       const r = await fetch(location.pathname + '?_=' + Date.now(), { method: 'HEAD', cache: 'no-store' });
       const serverEtag = r.headers.get('etag') || r.headers.get('last-modified') || '';
       if (!serverEtag) return; // GitHub Pages no devolvió ETag, ignorar
+      etagServidor = serverEtag;
       const stored = localStorage.getItem(STORAGE_KEY);
       if (!stored) {
         // Primera vez: guardar ETag actual y listo
         localStorage.setItem(STORAGE_KEY, serverEtag);
         return;
       }
-      if (serverEtag !== stored) {
-        // El servidor tiene una versión más nueva que la que tenemos guardada
-        mostrarBanner();
-      }
+      if (serverEtag === stored) return;
+      if (localStorage.getItem(DESCARTADO) === serverEtag) return; // ya lo cerró para esta versión
+      mostrarBanner();
     } catch(e) { /* silencioso si no hay red */ }
   };
 
