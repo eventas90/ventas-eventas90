@@ -8303,6 +8303,19 @@ function actualizarItemVenta(vid, campo, valor) {
   calcResumenVenta();
 }
 
+// Refresca el resalte del campo "Costo L" sin re-renderizar la lista (así no se pierde el foco)
+function marcarCostoItem(el) {
+  const vacio = !(parseFloat(el.value) > 0);
+  el.style.borderColor = vacio ? 'rgba(245,166,35,.55)' : 'var(--border)';
+  el.style.color       = vacio ? 'var(--gold)' : 'var(--text3)';
+  const lbl = el.previousElementSibling;
+  if (lbl) {
+    lbl.style.color  = vacio ? 'var(--gold)' : 'var(--text3)';
+    lbl.textContent  = (vacio ? '⚠️ ' : '') + 'Costo L';
+  }
+  if (typeof calcResumenVenta === 'function') calcResumenVenta();
+}
+
 function renderItemsVenta() {
   const lista = document.getElementById('vItemsLista');
   const empty = document.getElementById('vItemsEmpty');
@@ -8331,12 +8344,18 @@ function renderItemsVenta() {
           </label>
           <span style="font-size:11px;color:${item.llevaISV?'var(--gold)':'var(--text3)'}">${isvLabel}</span>
           ${item.llevaISV ? (() => { const _basePrice = item.precioFinal / (1 + (item.isvPct||0)); return `<span style="font-size:11px;color:var(--text3);background:rgba(255,255,255,.05);padding:2px 7px;border-radius:4px;border:1px solid var(--border)" title="Precio sin ISV">Precio sin ISV: ${fmtLPS(_basePrice)}</span>`; })() : ''}
-          ${esManual ? `
-          <div style="display:flex;align-items:center;gap:4px">
-            <span style="font-size:11px;color:var(--text3)">Costo L</span>
-            <input type="number" value="${item.costoLPS||0}" step="0.01" min="0" onchange="actualizarItemVenta('${item._id}','costoLPS',this.value)" style="width:80px;padding:4px 6px;background:var(--bg4);border:1px solid var(--border);border-radius:5px;color:var(--text3);font-size:12px;outline:none" title="Costo en LPS (para calcular comisión)">
-          </div>` : ''}
-          ${(!esManual && ['admin','gerencia'].includes(currentUser?.rol) && item.costoLPS) ? `<span style="font-size:11px;color:var(--text3);background:rgba(255,255,255,.05);padding:2px 7px;border-radius:4px;border:1px solid var(--border)">Costo L</span><span style="font-size:11px;color:var(--text3)">${fmtLPS(item.costoLPS)}</span>` : ''}
+          ${(() => {
+            // Costo editable: los manuales los edita cualquiera; los de catálogo (incluye comodines)
+            // solo admin/gerencia, porque el costo del catálogo no se muestra a vendedores.
+            if (!esManual && !['admin','gerencia'].includes(currentUser?.rol)) return '';
+            const sinCosto = !(item.costoLPS > 0);
+            return `<div style="display:flex;align-items:center;gap:4px" title="Costo en LPS — base de la utilidad y la comisión${sinCosto ? '. Sin este dato no se calcula utilidad ni comisión' : ''}">
+              <span style="font-size:11px;color:${sinCosto ? 'var(--gold)' : 'var(--text3)'}">${sinCosto ? '⚠️ ' : ''}Costo L</span>
+              <input type="number" value="${item.costoLPS||0}" step="0.01" min="0"
+                onchange="actualizarItemVenta('${item._id}','costoLPS',this.value);marcarCostoItem(this)"
+                style="width:85px;padding:4px 6px;background:var(--bg4);border:1px solid ${sinCosto ? 'rgba(245,166,35,.55)' : 'var(--border)'};border-radius:5px;color:${sinCosto ? 'var(--gold)' : 'var(--text3)'};font-size:12px;outline:none">
+            </div>`;
+          })()}
         </div>
         ${(() => {
           const lista = item.precioLista && item.precioLista > 0 ? item.precioLista : 0;
