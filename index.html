@@ -8482,7 +8482,9 @@ function calcResumenVenta() {
     const sinISV      = item.llevaISV ? precioFinal / (1 + isvPct) : precioFinal;
     subtotalSinISV   += sinISV * cant;
     totalISV         += (precioFinal - sinISV) * cant;
-    utilidadBruta    += (sinISV - (item.costoLPS || 0)) * cant;
+    // Sin costo registrado → NO genera utilidad (evita utilidades y comisiones infladas)
+    const costoIt = item.costoLPS || 0;
+    utilidadBruta += costoIt > 0 ? (sinISV - costoIt) * cant : 0;
   });
   const envio = parseFloat(document.getElementById('vEnvio')?.value) || 0;
 
@@ -8582,7 +8584,11 @@ function calcResumenVenta() {
   const roiRowEl = document.getElementById('vResRoiRow');
   if (roiRowEl) roiRowEl.style.display = verRoiPanel ? 'flex' : 'none';
   const roiEl = document.getElementById('vResRoi');
-  if (roiEl) { roiEl.textContent = fmtPct(roiVenta); roiEl.style.color = roiCls; }
+  // Si falta algún costo, el ROI no es confiable: no se muestra
+  if (roiEl) {
+    if (haySinCosto) { roiEl.textContent = '— falta costo'; roiEl.style.color = 'var(--gold)'; }
+    else { roiEl.textContent = fmtPct(roiVenta); roiEl.style.color = roiCls; }
+  }
   const notaEl = document.getElementById('vComisionNota');
   if (notaEl) notaEl.style.display = (esParcial && saldoPend > 0) ? '' : 'none';
   const sinCostoEl = document.getElementById('vSinCostoWarn');
@@ -8613,6 +8619,17 @@ function calcResumenVenta() {
 // ===== GUARDAR VENTA =====
 async function guardarVenta() {
   if (!vItemsActuales.length) { showToast('⚠️ Agrega al menos un producto','warn'); return; }
+  // Aviso si hay productos sin costo: esos NO generan utilidad ni comisión
+  const sinCosto = vItemsActuales.filter(it => !((it.costoLPS||0) > 0));
+  if (sinCosto.length) {
+    const lista = sinCosto.map(it => '  • ' + (it.descripcion || it.nombre || it.sku || 'producto')).join('\n');
+    const ok = confirm(
+      `⚠️ ${sinCosto.length} producto(s) SIN COSTO registrado:\n\n${lista}\n\n` +
+      `Estos productos NO generarán utilidad ni comisión para el vendedor, y el ROI de la venta no se podrá calcular.\n\n` +
+      `Escribe el "Costo L" de cada uno antes de guardar.\n\n¿Guardar la venta así de todas formas?`
+    );
+    if (!ok) return;
+  }
   const nombre    = (document.getElementById('vClienteNombre').value||'').trim();
   const direccion = (document.getElementById('vClienteDireccion').value||'').trim();
   const ciudad    = (document.getElementById('vClienteCiudad').value||'').trim();
@@ -8676,7 +8693,8 @@ async function guardarVenta() {
     const sinISV     = item.llevaISV ? precio/(1+isvPct) : precio;
     subtotalSinISV  += sinISV * cant;
     totalISV        += (precio - sinISV) * cant;
-    utilidadBruta   += (sinISV - (item.costoLPS||0)) * cant;
+    // Sin costo registrado → NO genera utilidad (así la comisión no se infla)
+    utilidadBruta   += (item.costoLPS||0) > 0 ? (sinISV - item.costoLPS) * cant : 0;
   });
   const envio       = parseFloat(document.getElementById('vEnvio').value)||0;
   const descActivoV = document.getElementById('vDescActivo')?.checked;
@@ -10318,7 +10336,8 @@ function renderReporteProductos() {
         const sinISV   = it.llevaISV ? pUnit / (1 + isvPct) : pUnit;
         const costoU   = Number(it.costoLPS || 0);
         const costoTot = costoU * qty;
-        const utilidad = (sinISV - costoU) * qty;
+        // Sin costo registrado → no se calcula utilidad ni ROI (evita cifras infladas)
+        const utilidad = costoU > 0 ? (sinISV - costoU) * qty : 0;
         filas.push({
           fecha, ventaId: v.id,
           sku, nombre: nom,
