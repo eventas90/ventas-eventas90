@@ -10152,7 +10152,7 @@ function _renderGraficosReporte(lista, rows) {
   }
 
   // ── Pastel 3D abajo ──────────────────────────────────────────────────────
-  if (!el3D || !rows.length) { if(el3D) el3D.innerHTML = _cardVentasMensualSafe(vidFilt); return; }
+  if (!el3D || !rows.length) { if(el3D) el3D.innerHTML = _cardVentasMensualSafe(); return; }
   const pieData = rows.slice(0,10).map((r,i) => ({ label:r.nombre, valor:r.totalVentas, color:COLORS[i%COLORS.length] }));
   const pieTotal = pieData.reduce((a,d)=>a+d.valor,0);
   window._vPieData = pieData;
@@ -10174,13 +10174,19 @@ function _renderGraficosReporte(lista, rows) {
           </div>`).join('')}
       </div>
     </div>
-  </div>` + _cardVentasMensualSafe(vidFilt);
+  </div>` + _cardVentasMensualSafe();
 }
 
-// Nunca dejar que un error de la grÃ¡fica mensual oculte el resto del reporte
-function _cardVentasMensualSafe(vidFilt) {
-  try { return _cardVentasMensual(vidFilt); }
-  catch (e) { console.error('GrÃ¡fica mensual:', e); return '<div class="card" style="padding:14px;margin-top:16px;color:var(--red);font-size:12px">âš ï¸ No se pudo dibujar la grÃ¡fica mensual: ' + (e && e.message ? e.message : e) + '</div>'; }
+// Nunca dejar que un error de la grafica mensual oculte el resto del reporte.
+// Lee el filtro de vendedor directamente de la pantalla (vidFilt no existe en este ambito).
+function _cardVentasMensualSafe() {
+  try {
+    const vf = (document.getElementById('vRepVendedor') || {}).value || '';
+    return _cardVentasMensual(vf);
+  } catch (e) {
+    console.error('Grafica mensual:', e);
+    return '<div class="card" style="padding:14px;margin-top:16px;color:var(--red);font-size:12px">No se pudo dibujar la grafica mensual: ' + (e && e.message ? e.message : e) + '</div>';
+  }
 }
 
 // ── Gráfica mensual de ventas (crecimiento) ──────────────────────────────────
