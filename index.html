@@ -10152,7 +10152,7 @@ function _renderGraficosReporte(lista, rows) {
   }
 
   // ── Pastel 3D abajo ──────────────────────────────────────────────────────
-  if (!el3D || !rows.length) { if(el3D) el3D.innerHTML=''; return; }
+  if (!el3D || !rows.length) { if(el3D) el3D.innerHTML = _cardVentasMensual(vidFilt); return; }
   const pieData = rows.slice(0,10).map((r,i) => ({ label:r.nombre, valor:r.totalVentas, color:COLORS[i%COLORS.length] }));
   const pieTotal = pieData.reduce((a,d)=>a+d.valor,0);
   window._vPieData = pieData;
@@ -10174,6 +10174,120 @@ function _renderGraficosReporte(lista, rows) {
           </div>`).join('')}
       </div>
     </div>
+  </div>` + _cardVentasMensual(vidFilt);
+}
+
+// ── Gráfica mensual de ventas (crecimiento) ──────────────────────────────────
+// Independiente del período elegido arriba: siempre muestra los últimos 12 meses
+// para ver la tendencia. Respeta el filtro de vendedor y el rol del usuario.
+// El sistema lleva ventas completas desde julio 2026; lo anterior son solo las
+// ventas con cobro pendiente que se importaron, por eso no se grafican.
+const VENTAS_MENSUAL_DESDE = '2026-07';
+
+function _cardVentasMensual(vidFilt) {
+  let lista = rentasPorRol(ventas);
+  if (vidFilt) lista = lista.filter(v => String(v.vendedorId) === String(vidFilt));
+
+  const porMes = {};
+  lista.forEach(v => {
+    const k = String(v.fecha || '').substring(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(k) || k < VENTAS_MENSUAL_DESDE) return;
+    if (!porMes[k]) porMes[k] = { total: 0, utilidad: 0, n: 0 };
+    porMes[k].total    += (v.total || 0);
+    porMes[k].utilidad += (v.utilidadBruta || 0);
+    porMes[k].n++;
+  });
+  const claves = Object.keys(porMes).sort();
+  if (!claves.length) return '';
+
+  // Meses continuos desde el primero con datos hasta el mes actual (huecos en 0), máximo 12
+  const hoy = new Date();
+  const mesActual = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
+  const meses = [];
+  let [y, m] = claves[0].split('-').map(Number);
+  for (let g = 0; g < 60; g++) {
+    const k = y + '-' + String(m).padStart(2, '0');
+    meses.push({ k, ...(porMes[k] || { total: 0, utilidad: 0, n: 0 }) });
+    if (k >= mesActual) break;
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  const serie = meses.slice(-12);
+
+  const NOMBRES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const lbl  = k => { const [yy, mm] = k.split('-'); return NOMBRES[+mm - 1] + " '" + yy.slice(2); };
+  const lblL = k => { const [yy, mm] = k.split('-'); return NOMBRES[+mm - 1] + ' ' + yy; };
+  const fmtK = v => 'L ' + Math.round(v).toLocaleString('es-HN');
+
+  const W = 960, H = 300, padL = 16, padR = 16, padT = 48, padB = 44;
+  const n = serie.length, slot = (W - padL - padR) / n, barW = Math.min(64, slot * 0.58);
+  const maxV = Math.max(...serie.map(s => s.total), 1);
+  const chartH = H - padT - padB;
+  const yOf = v => padT + chartH - (v / maxV) * chartH;
+  const parts = [];
+
+  parts.push(`<defs><pattern id="vmEnCurso" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="var(--accent)" opacity=".55"/><line x1="0" y1="0" x2="0" y2="8" stroke="var(--bg2)" stroke-width="3"/></pattern></defs>`);
+  for (let i = 0; i <= 4; i++) {
+    const gy = padT + chartH - (chartH * i / 4);
+    parts.push(`<line x1="${padL}" x2="${W - padR}" y1="${gy.toFixed(1)}" y2="${gy.toFixed(1)}" stroke="var(--border2)" stroke-dasharray="3,4"/>`);
+  }
+
+  serie.forEach((s, i) => {
+    const cx = padL + slot * i + slot / 2, x = cx - barW / 2;
+    const yv = yOf(s.total), h = Math.max(padT + chartH - yv, 0);
+    const enCurso = s.k === mesActual;
+    const prev = i > 0 ? serie[i - 1].total : null;
+    const crec = (prev && prev > 0) ? ((s.total - prev) / prev) * 100 : null;
+    const tip = `${lblL(s.k)}: ${fmtLPS(s.total)} · ${s.n} venta${s.n !== 1 ? 's' : ''} · utilidad ${fmtLPS(s.utilidad)}` +
+                (crec !== null ? ` · ${crec >= 0 ? '+' : ''}${crec.toFixed(1)}% vs mes anterior` : '') + (enCurso ? ' · mes en curso' : '');
+    parts.push(`<rect x="${x.toFixed(1)}" y="${yv.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="6" fill="${enCurso ? 'url(#vmEnCurso)' : 'var(--accent)'}" style="transition:filter .15s" onmouseenter="this.style.filter='brightness(1.25)'" onmouseleave="this.style.filter='none'"><title>${tip}</title></rect>`);
+    if (s.total > 0) {
+      parts.push(`<text x="${cx.toFixed(1)}" y="${(yv - 6).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="800" fill="var(--text)">${fmtK(s.total)}</text>`);
+      if (crec !== null) parts.push(`<text x="${cx.toFixed(1)}" y="${(yv - 20).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="${crec >= 0 ? 'var(--green)' : 'var(--red)'}">${crec >= 0 ? '▲' : '▼'} ${Math.abs(crec).toFixed(1)}%</text>`);
+    }
+    parts.push(`<text x="${cx.toFixed(1)}" y="${(H - padB + 18).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="${enCurso ? '800' : '600'}" fill="${enCurso ? 'var(--text)' : 'var(--text2)'}">${lbl(s.k)}${enCurso ? ' *' : ''}</text>`);
+    parts.push(`<text x="${cx.toFixed(1)}" y="${(H - padB + 33).toFixed(1)}" text-anchor="middle" font-size="10" fill="var(--text3)">${s.n} vta${s.n !== 1 ? 's' : ''}</text>`);
+  });
+
+  // Línea de utilidad bruta
+  const pts = serie.map((s, i) => `${(padL + slot * i + slot / 2).toFixed(1)},${yOf(s.utilidad).toFixed(1)}`);
+  parts.push(`<polyline points="${pts.join(' ')}" fill="none" stroke="var(--gold)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`);
+  serie.forEach((s, i) => {
+    const cx = padL + slot * i + slot / 2;
+    parts.push(`<circle cx="${cx.toFixed(1)}" cy="${yOf(s.utilidad).toFixed(1)}" r="4" fill="var(--gold)" stroke="var(--bg2)" stroke-width="1.5"><title>Utilidad ${lblL(s.k)}: ${fmtLPS(s.utilidad)}</title></circle>`);
+  });
+
+  // KPIs: solo meses completos (el mes en curso aún no termina)
+  const completos = serie.filter(s => s.k !== mesActual && s.total > 0);
+  const mejor  = [...serie].sort((a, b) => b.total - a.total)[0];
+  const ultimo = completos[completos.length - 1] || null;
+  const penult = completos.length > 1 ? completos[completos.length - 2] : null;
+  const crecUlt = (ultimo && penult && penult.total > 0) ? ((ultimo.total - penult.total) / penult.total) * 100 : null;
+  const prom = completos.length ? completos.reduce((a, s) => a + s.total, 0) / completos.length : 0;
+  const kpi = (t, v, sub, col) => `<div style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:10px 14px;min-width:170px;flex:1">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${t}</div>
+      <div style="font-size:16px;font-weight:900;color:${col || 'var(--text)'}">${v}</div>
+      ${sub ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">${sub}</div>` : ''}
+    </div>`;
+  const crecTxt = crecUlt === null ? '—' : (crecUlt >= 0 ? '▲ +' : '▼ ') + crecUlt.toFixed(1) + '%';
+  const crecSub = (ultimo && penult) ? `${lblL(ultimo.k)} ${fmtLPS(ultimo.total)} vs ${lblL(penult.k)} ${fmtLPS(penult.total)}` : 'Se necesitan 2 meses completos';
+  const crecCol = crecUlt === null ? undefined : (crecUlt >= 0 ? 'var(--green)' : 'var(--red)');
+
+  return `<div class="card" style="padding:20px;margin-top:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <div style="font-weight:700;font-size:13px">📈 Ventas Mensuales — crecimiento</div>
+      <div style="display:flex;gap:14px;font-size:11px;color:var(--text3);flex-wrap:wrap">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--accent);vertical-align:-1px"></span> Total vendido</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--gold);vertical-align:-1px"></span> Utilidad bruta</span>
+        <span>* mes en curso</span>
+      </div>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;overflow:visible">${parts.join('')}</svg>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+      ${kpi('🏆 Mejor mes', mejor ? fmtLPS(mejor.total) : '—', mejor ? lblL(mejor.k) + (mejor.k === mesActual ? ' (en curso)' : '') : '')}
+      ${kpi('📊 Último mes completo vs anterior', crecTxt, crecSub, crecCol)}
+      ${kpi('📅 Promedio mensual', prom ? fmtLPS(prom) : '—', completos.length ? `${completos.length} mes${completos.length !== 1 ? 'es' : ''} completo${completos.length !== 1 ? 's' : ''}` : 'Aún sin mes completo')}
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-top:10px">Datos del sistema desde ${lblL(VENTAS_MENSUAL_DESDE)} · por fecha de venta · máximo 12 meses.</div>
   </div>`;
 }
 
