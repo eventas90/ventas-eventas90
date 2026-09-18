@@ -10152,7 +10152,7 @@ function _renderGraficosReporte(lista, rows) {
   }
 
   // ── Pastel 3D abajo ──────────────────────────────────────────────────────
-  if (!el3D || !rows.length) { if(el3D) el3D.innerHTML = _cardVentasMensual(vidFilt); return; }
+  if (!el3D || !rows.length) { if(el3D) el3D.innerHTML = _cardVentasMensualSafe(vidFilt); return; }
   const pieData = rows.slice(0,10).map((r,i) => ({ label:r.nombre, valor:r.totalVentas, color:COLORS[i%COLORS.length] }));
   const pieTotal = pieData.reduce((a,d)=>a+d.valor,0);
   window._vPieData = pieData;
@@ -10174,7 +10174,13 @@ function _renderGraficosReporte(lista, rows) {
           </div>`).join('')}
       </div>
     </div>
-  </div>` + _cardVentasMensual(vidFilt);
+  </div>` + _cardVentasMensualSafe(vidFilt);
+}
+
+// Nunca dejar que un error de la grÃ¡fica mensual oculte el resto del reporte
+function _cardVentasMensualSafe(vidFilt) {
+  try { return _cardVentasMensual(vidFilt); }
+  catch (e) { console.error('GrÃ¡fica mensual:', e); return '<div class="card" style="padding:14px;margin-top:16px;color:var(--red);font-size:12px">âš ï¸ No se pudo dibujar la grÃ¡fica mensual: ' + (e && e.message ? e.message : e) + '</div>'; }
 }
 
 // ── Gráfica mensual de ventas (crecimiento) ──────────────────────────────────
