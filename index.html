@@ -7511,12 +7511,7 @@ async function _enviarConfirmEnvio({ nombre, telRaw, ciudad, tel2, email, dir, m
 
   showToast('📤 Enviando WhatsApp...', 'info');
   try {
-    const res = await fetch(`https://api.ultramsg.com/${ULTRA_INSTANCE}/messages/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ token: ULTRA_TOKEN, to: '+' + telN, body: msg })
-    });
-    const data = await res.json();
+    const data = await enviarWhatsApp('+' + telN, msg);
     if (data.sent === 'true' || data.id) {
       showToast('✅ WhatsApp enviado a ' + nombre, 'success');
       addHistorial(`Confirmación de datos de envío enviada por WhatsApp a ${nombre} (+${telN})`, 'Clientes');
@@ -12845,8 +12840,16 @@ function renderHistorialPrecios() {
 }
 
 // ── COMPARTIR COTIZACIÓN ─────────────────────────────────────────────────────
-const ULTRA_INSTANCE = 'instance178325';
-const ULTRA_TOKEN    = 'zm383lcp9w2xv11q';
+// El token de UltraMsg ya NO vive en la app: el envÃ­o pasa por la edge function
+// send-whatsapp (valida que el usuario estÃ© activo y usa el secreto ULTRAMSG_TOKEN).
+async function enviarWhatsApp(to, body) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SUPABASE_KEY },
+    body: JSON.stringify({ usuario: currentUser?.user || '', to, body })
+  });
+  return await res.json();
+}
 
 async function compartirCotizacion(id) {
   const c = cotizaciones.find(x => x.id === id);
@@ -12949,12 +12952,7 @@ async function enviarWappCotizacion(id) {
   st.innerHTML = '';
 
   try {
-    const res = await fetch(`https://api.ultramsg.com/${ULTRA_INSTANCE}/messages/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ token: ULTRA_TOKEN, to: '+' + tel, body: msg })
-    });
-    const data = await res.json();
+    const data = await enviarWhatsApp('+' + tel, msg);
     if (data.sent === 'true' || data.id) {
       st.innerHTML = '<span style="color:var(--green)">✅ WhatsApp enviado correctamente</span>';
       addHistorial(`Cotización ${c.numero} compartida por WhatsApp a +${tel}`, 'Cotizaciones');
