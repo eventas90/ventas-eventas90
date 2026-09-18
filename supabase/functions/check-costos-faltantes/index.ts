@@ -21,10 +21,11 @@ async function sendWA(msg: string) {
   const token = Deno.env.get('ULTRAMSG_TOKEN') ?? '';
   const to    = Deno.env.get('WA_GRUPO_DESTINO') ?? '';
   if (!inst || !token || !to) return { error: 'Faltan secretos de WhatsApp' };
+  // UltraMsg NO lee JSON: el token y los campos van como formulario (x-www-form-urlencoded)
   const r = await fetch(`https://api.ultramsg.com/${inst}/messages/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token, to, body: msg })
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ token, to, body: msg }).toString()
   });
   return await r.json().catch(() => ({}));
 }
