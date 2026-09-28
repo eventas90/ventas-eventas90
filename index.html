@@ -4006,8 +4006,18 @@ function initApp() {
   // Cargar datos desde Google Sheets
   cargarDesdeSheetsYRenderizar();
 
-  // Auto-refresh productos cada 30 segundos en segundo plano
-  setInterval(() => sincronizarSilencioso(), 30 * 1000);
+  // Auto-refresh productos en segundo plano.
+  // OJO: cada pasada baja el catálogo COMPLETO (~0.44 MB gzip, 1739 productos) aunque no
+  // haya cambiado nada. A 30 s eso era ~1.24 GB/día por pestaña abierta y reventó la cuota
+  // de egress del plan free (Supabase restringió el proyecto el 28/sep/2026, HTTP 402).
+  // Ahora: cada 10 min, solo con la pestaña visible, y al volver a la pestaña únicamente
+  // si ya pasaron los 10 min desde la última pasada.
+  setInterval(() => { if (!document.hidden) sincronizarSilencioso(); }, SYNC_PRODUCTOS_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && Date.now() - _ultimoSyncProductos >= SYNC_PRODUCTOS_MS) {
+      sincronizarSilencioso();
+    }
+  });
 
   // Realtime + auto-refresh de ventas
   iniciarRealtimeVentas();
@@ -4021,9 +4031,12 @@ async function refrescarProductos() {
   showToast('✅ Tabla actualizada', 'success', 2000);
 }
 
+const SYNC_PRODUCTOS_MS = 10 * 60 * 1000;   // ver nota de egress donde se arma el setInterval
+let _ultimoSyncProductos = 0;
 let _syncApiErrorAvisado = false;
 async function sincronizarSilencioso() {
   if(!currentUser) return;
+  _ultimoSyncProductos = Date.now();
   try {
     // Productos se refrescan desde la API externa (el Supabase local no tiene productos)
     const nuevos = await cargarProductosAPI();
@@ -6961,8 +6974,12 @@ function iniciarRealtimeVentas() {
     console.warn('⚠️ Realtime init falló:', e.message);
   }
 
-  // 2. Fallback: auto-refresh cada 2 minutos
-  _ventasAutoTimer = setInterval(() => _recargarVentasSilencioso(null), 2 * 60 * 1000);
+  // 2. Fallback: auto-refresh cada 10 min y solo con la pestaña visible.
+  //    Realtime (arriba) ya cubre los cambios en vivo; esto es solo red de seguridad.
+  //    A 2 min bajaba ventas+clientes completos (~0.24 MB gzip) 720 veces al día por pestaña.
+  _ventasAutoTimer = setInterval(() => {
+    if (!document.hidden) _recargarVentasSilencioso(null);
+  }, 10 * 60 * 1000);
 }
 
 function detenerRealtimeVentas() {
