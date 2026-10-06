@@ -439,7 +439,11 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
   #vPanelDespacho .card-header { position: sticky; top: var(--desp-top, 0px); z-index: 5; background: var(--card); margin: -12px -12px 12px; padding: 10px 12px; border-bottom: 1px solid var(--border2); border-radius: var(--radius) var(--radius) 0 0; }
   #vPanelDespacho .card-title { font-size: 15px; }
   #vPanelDespacho .card-header > div:last-child { width: 100%; }
-  #despFecha { flex: 1; min-width: 0; }
+  #despFecha { flex: 1 1 150px; min-width: 140px; }
+  #vSubNav { flex-wrap: nowrap !important; overflow-x: auto; margin-bottom: 12px !important; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  #vSubNav::-webkit-scrollbar { display: none; }
+  #vSubNav .btn { flex-shrink: 0; padding: 8px 12px; font-size: 13px; }
+  #vSubNav #vSubClientes { margin-left: 0 !important; }
   #despKpi { grid-template-columns: 1fr 1fr !important; gap: 8px !important; margin-bottom: 12px !important; }
   #despKpi .stat-card { padding: 10px 12px; }
   #despKpi .stat-value { font-size: 22px; }
@@ -1955,7 +1959,7 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
     <div class="tab-content" id="tab-ventas">
 
       <!-- Sub-nav ventas -->
-      <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+      <div id="vSubNav" style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
         <button class="btn btn-ghost" id="vSubNueva" onclick="vShowSub('nueva')">➕ Nueva Venta</button>
         <button class="btn btn-primary" id="vSubLista" onclick="vShowSub('lista')">📋 Historial de Ventas</button>
         <button class="btn btn-ghost" id="vSubReporte" onclick="vShowSub('reporte')">📊 Reporte Vendedores</button>
@@ -7410,6 +7414,11 @@ function vShowSub(sub) {
   });
   if (sub === 'nueva') setTipoVenta(vTipoVenta || 'informal');  // sincroniza botones y etiquetas
   if (sub === 'nueva' && !vClienteSelId && _ventasCargadas) seleccionarConsumidorFinal();
+  try {
+    const b = document.getElementById('vSub' + sub.charAt(0).toUpperCase() + sub.slice(1));
+    const nav = b && b.parentElement;
+    if (nav && nav.scrollWidth > nav.clientWidth) nav.scrollLeft += b.getBoundingClientRect().left - nav.getBoundingClientRect().left - (nav.clientWidth - b.offsetWidth) / 2;
+  } catch (e) {}
   if (sub === 'lista')     renderHistorialVentas();
   if (sub === 'reporte')   renderReporteVendedores();
   if (sub === 'clientes')  renderTablaClientes();
