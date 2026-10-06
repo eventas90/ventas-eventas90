@@ -415,6 +415,36 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
   .topnav { padding: 0 12px; }
 }
 
+/* ====== DESPACHO DEL DÍA: vista celular ====== */
+.desp-movil { display: none; }
+.desp-filtro { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); cursor: pointer; user-select: none; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius2); background: var(--bg3); white-space: nowrap; }
+.desp-filtro input { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; }
+.desp-card { background: var(--bg3); border: 1px solid var(--border2); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+.desp-card.hecho { opacity: .62; }
+.desp-card-top { display: flex; gap: 10px; align-items: center; }
+.desp-card-img { width: 52px; height: 52px; object-fit: contain; border-radius: 8px; background: var(--bg4); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+.desp-card-nombre { font-size: 14px; font-weight: 700; line-height: 1.25; }
+.desp-card-sku { font-size: 10px; color: var(--text3); font-family: monospace; margin-top: 3px; }
+.desp-card-nums { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+.desp-card-num { background: var(--bg2); border-radius: 8px; padding: 6px 10px; }
+.desp-card-num span { display: block; font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .4px; }
+.desp-card-num b { font-size: 22px; font-weight: 900; }
+.desp-card-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.desp-card-btn button { width: 100%; padding: 13px !important; font-size: 15px !important; border-radius: 10px !important; }
+@media (max-width: 700px) {
+  .desp-desktop { display: none; }
+  .desp-movil { display: block; }
+  .desp-ayuda { display: none; }
+  #vPanelDespacho .card { padding: 12px; }
+  #vPanelDespacho .card-header { position: sticky; top: var(--desp-top, 0px); z-index: 5; background: var(--card); margin: -12px -12px 12px; padding: 10px 12px; border-bottom: 1px solid var(--border2); border-radius: var(--radius) var(--radius) 0 0; }
+  #vPanelDespacho .card-title { font-size: 15px; }
+  #vPanelDespacho .card-header > div:last-child { width: 100%; }
+  #despFecha { flex: 1; min-width: 0; }
+  #despKpi { grid-template-columns: 1fr 1fr !important; gap: 8px !important; margin-bottom: 12px !important; }
+  #despKpi .stat-card { padding: 10px 12px; }
+  #despKpi .stat-value { font-size: 22px; }
+}
+
 /* ====== LOADING ====== */
 .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; display: inline-block; }
 
@@ -2409,10 +2439,11 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
               <input type="date" id="despFecha" onchange="renderDespachoDia()"
                 style="padding:7px 10px;background:var(--bg3);border:1px solid var(--accent);border-radius:var(--radius2);color:var(--text);font-size:13px;outline:none">
               <button class="btn btn-ghost btn-sm" onclick="document.getElementById('despFecha').value=_despachoHoyISO();renderDespachoDia()">Hoy</button>
+              <label class="desp-filtro"><input type="checkbox" id="despSoloPend" onchange="despToggleSoloPend(this)"> Solo pendientes</label>
               <button class="btn btn-ghost btn-sm" onclick="renderDespachoDia()">🔄 Recargar</button>
             </div>
           </div>
-          <div style="font-size:12px;color:var(--text3);background:rgba(61,106,255,.06);border:1px solid rgba(61,106,255,.18);border-radius:8px;padding:9px 12px;margin-bottom:14px">
+          <div class="desp-ayuda" style="font-size:12px;color:var(--text3);background:rgba(61,106,255,.06);border:1px solid rgba(61,106,255,.18);border-radius:8px;padding:9px 12px;margin-bottom:14px">
             ℹ️ <b>Descontar inventario</b> resta lo vendido de tu stock. <b>Aplicar en Wix</b> envía ese stock actualizado a la tienda (Wix refleja siempre tu inventario). El descuento queda registrado para no repetirse.
           </div>
           <!-- KPIs -->
@@ -4156,7 +4187,10 @@ async function cargarDesdeSheetsYRenderizar() {
   } finally {
     ocultarCargando();
     const perms = PERMS[currentUser.rol];
-    showTab(perms.tabs[0]||'dashboard');
+    // Enlace directo al despacho (index.html#despacho), p. ej. guardado en la pantalla de inicio del celular
+    const _irDespacho = /^#despacho$/i.test(location.hash) && perms.tabs.includes('ventas');
+    if (_irDespacho) _ventasSubActivo = 'despacho';
+    showTab(_irDespacho ? 'ventas' : (perms.tabs[0]||'dashboard'));
     renderDashboard();
     initParametrosForm();
     renderParametros();
@@ -10810,6 +10844,15 @@ function getDespachoGrupos(fecha) {
   return Object.values(map).sort((a,b) => (b.pendInv - a.pendInv) || a.nombre.localeCompare(b.nombre));
 }
 
+// Filtro "Solo pendientes" del despacho (preferencia por dispositivo)
+function _despSoloPend() {
+  try { return localStorage.getItem('despSoloPend') === '1'; } catch (e) { return false; }
+}
+function despToggleSoloPend(chk) {
+  try { localStorage.setItem('despSoloPend', chk.checked ? '1' : '0'); } catch (e) {}
+  renderDespachoDia();
+}
+
 async function renderDespachoDia() {
   const cat = document.getElementById('despCatalogo');
   const man = document.getElementById('despManual');
@@ -10844,10 +10887,48 @@ async function renderDespachoDia() {
 
   // ── Tabla de productos de catálogo ──
   const stockColor = (st, min) => st > min ? 'var(--accent3)' : st > 0 ? 'var(--gold)' : 'var(--red)';
+
+  // Filtro "Solo pendientes": los KPIs siguen contando todo, solo cambia la lista
+  const soloPend = _despSoloPend();
+  const chkPend  = document.getElementById('despSoloPend');
+  if (chkPend) chkPend.checked = soloPend;
+  const catVista = soloPend ? catalogo.filter(g => g.pendInv > 0 || g.pendWix > 0) : catalogo;
+
+  // En celular el encabezado (fecha / recargar) queda fijo justo debajo de la barra de pestañas
+  try {
+    const nav = document.querySelector('nav');
+    const top = nav ? Math.round(nav.getBoundingClientRect().bottom) : 0;
+    document.getElementById('vPanelDespacho')?.style.setProperty('--desp-top', (top > 0 && top < 300 ? top : 0) + 'px');
+  } catch (e) {}
+
   if (!catalogo.length) {
     cat.innerHTML = `<div style="padding:18px;color:var(--text3);font-size:13px">No hay productos de catálogo en esta fecha (revisa la sección de manuales abajo).</div>`;
+  } else if (!catVista.length) {
+    cat.innerHTML = `<div style="text-align:center;padding:36px 20px;color:var(--text3)"><div style="font-size:36px;margin-bottom:8px">✅</div><div style="font-size:15px;color:var(--green);font-weight:700">Todo despachado</div><div style="font-size:12px;margin-top:4px">Los ${catalogo.length} producto(s) del día ya están descontados. Quita "Solo pendientes" para verlos.</div></div>`;
   } else {
-    cat.innerHTML = `<div class="table-wrap"><table>
+    const filas = catVista.map(g => {
+      const st  = parseInt(g.prod.cantidad)||0;
+      const min = parseInt(g.prod.minStock)||0;
+      const invBadge = g.pendInv > 0
+        ? `<span style="font-size:11px;font-weight:700;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.35);color:var(--gold);border-radius:10px;padding:2px 9px">⏳ Faltan ${g.pendInv}</span>`
+        : (g.invHecho > 0 ? `<span style="font-size:11px;font-weight:700;background:rgba(46,213,115,.12);border:1px solid rgba(46,213,115,.3);color:var(--green);border-radius:10px;padding:2px 9px">✅ Descontado</span>`
+                          : `<span style="font-size:11px;color:var(--text3)">—</span>`);
+      const wixBadge = g.pendWix > 0
+        ? `<span style="font-size:11px;font-weight:700;background:rgba(90,100,128,.12);border:1px solid rgba(90,100,128,.3);color:var(--text3);border-radius:10px;padding:2px 9px">⏳ Pendiente</span>`
+        : (g.wixHecho > 0 ? `<span style="font-size:11px;font-weight:700;background:rgba(0,200,160,.12);border:1px solid rgba(0,200,160,.3);color:var(--accent3);border-radius:10px;padding:2px 9px">✅ En Wix${g.wixStock!=null?` (${g.wixStock})`:''}</span>`
+                          : `<span style="font-size:11px;color:var(--text3)">—</span>`);
+      const btnTodo = !puede ? '' : (g.pendInv > 0 || g.pendWix > 0
+        ? `<button onclick="despachoDescontarTodo('${g.key}')" title="Descuenta lo vendido del inventario y actualiza Wix en un solo paso" style="padding:5px 11px;font-size:12px;border:none;border-radius:6px;cursor:pointer;background:var(--gold);color:#000;font-weight:800">📦 Descontar + Wix (${Math.max(g.pendInv, g.pendWix)})</button>`
+        : `<button onclick="despachoDescontarTodo('${g.key}')" title="Ya descontado — clic para reenviar el stock actual a Wix" style="padding:5px 11px;font-size:12px;border:1px solid rgba(46,213,115,.3);border-radius:6px;cursor:pointer;background:rgba(46,213,115,.08);color:var(--green);font-weight:700">✅ Hecho · 🔄 Wix</button>`);
+      const accion = puede ? btnTodo : '<span style="font-size:11px;color:var(--text3)">Solo admin</span>';
+      const img = (w) => g.imagen
+        ? `<img src="${g.imagen}" style="width:${w}px;height:${w}px;object-fit:contain;border-radius:${w>40?8:6}px;background:var(--bg4);flex-shrink:0" onerror="this.style.display='none'">`
+        : `<div style="width:${w}px;height:${w}px;background:var(--bg4);border-radius:${w>40?8:6}px;display:flex;align-items:center;justify-content:center;flex-shrink:0">📦</div>`;
+      return { g, st, min, invBadge, wixBadge, accion, img };
+    });
+
+    // Computadora: la tabla de siempre
+    const tabla = `<div class="table-wrap"><table>
       <thead><tr>
         <th>Producto</th>
         <th style="text-align:center">Vendido hoy</th>
@@ -10856,36 +10937,43 @@ async function renderDespachoDia() {
         <th>Wix</th>
         <th style="text-align:center">Acciones</th>
       </tr></thead><tbody>
-      ${catalogo.map(g => {
-        const st  = parseInt(g.prod.cantidad)||0;
-        const min = parseInt(g.prod.minStock)||0;
-        const invBadge = g.pendInv > 0
-          ? `<span style="font-size:11px;font-weight:700;background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.35);color:var(--gold);border-radius:10px;padding:2px 9px">⏳ Faltan ${g.pendInv}</span>`
-          : (g.invHecho > 0 ? `<span style="font-size:11px;font-weight:700;background:rgba(46,213,115,.12);border:1px solid rgba(46,213,115,.3);color:var(--green);border-radius:10px;padding:2px 9px">✅ Descontado</span>`
-                            : `<span style="font-size:11px;color:var(--text3)">—</span>`);
-        const wixBadge = g.pendWix > 0
-          ? `<span style="font-size:11px;font-weight:700;background:rgba(90,100,128,.12);border:1px solid rgba(90,100,128,.3);color:var(--text3);border-radius:10px;padding:2px 9px">⏳ Pendiente</span>`
-          : (g.wixHecho > 0 ? `<span style="font-size:11px;font-weight:700;background:rgba(0,200,160,.12);border:1px solid rgba(0,200,160,.3);color:var(--accent3);border-radius:10px;padding:2px 9px">✅ En Wix${g.wixStock!=null?` (${g.wixStock})`:''}</span>`
-                            : `<span style="font-size:11px;color:var(--text3)">—</span>`);
-        const btnTodo = !puede ? '' : (g.pendInv > 0 || g.pendWix > 0
-          ? `<button onclick="despachoDescontarTodo('${g.key}')" title="Descuenta lo vendido del inventario y actualiza Wix en un solo paso" style="padding:5px 11px;font-size:12px;border:none;border-radius:6px;cursor:pointer;background:var(--gold);color:#000;font-weight:800">📦 Descontar + Wix (${Math.max(g.pendInv, g.pendWix)})</button>`
-          : `<button onclick="despachoDescontarTodo('${g.key}')" title="Ya descontado — clic para reenviar el stock actual a Wix" style="padding:5px 11px;font-size:12px;border:1px solid rgba(46,213,115,.3);border-radius:6px;cursor:pointer;background:rgba(46,213,115,.08);color:var(--green);font-weight:700">✅ Hecho · 🔄 Wix</button>`);
-        return `<tr>
+      ${filas.map(f => `<tr>
           <td style="font-weight:600">
             <div style="display:flex;align-items:center;gap:9px">
-              ${g.imagen?`<img src="${g.imagen}" style="width:34px;height:34px;object-fit:contain;border-radius:6px;background:var(--bg4);flex-shrink:0" onerror="this.style.display='none'">`:'<div style="width:34px;height:34px;background:var(--bg4);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0">📦</div>'}
-              <div style="min-width:0"><div style="font-size:13px">${g.nombre}</div><div style="font-size:10px;color:var(--text3);font-family:monospace">SKU: ${g.sku||'—'}</div></div>
+              ${f.img(34)}
+              <div style="min-width:0"><div style="font-size:13px">${f.g.nombre}</div><div style="font-size:10px;color:var(--text3);font-family:monospace">SKU: ${f.g.sku||'—'}</div></div>
             </div>
           </td>
-          <td style="text-align:center;font-weight:800;font-size:15px;color:var(--accent)">${g.vendido}</td>
-          <td style="text-align:center;font-weight:800;color:${stockColor(st,min)}">${st}</td>
-          <td>${invBadge}</td>
-          <td>${wixBadge}</td>
-          <td style="text-align:center;white-space:nowrap">${puede ? btnTodo : '<span style="font-size:11px;color:var(--text3)">Solo admin</span>'}</td>
-        </tr>`;
-      }).join('')}
+          <td style="text-align:center;font-weight:800;font-size:15px;color:var(--accent)">${f.g.vendido}</td>
+          <td style="text-align:center;font-weight:800;color:${stockColor(f.st,f.min)}">${f.st}</td>
+          <td>${f.invBadge}</td>
+          <td>${f.wixBadge}</td>
+          <td style="text-align:center;white-space:nowrap">${f.accion}</td>
+        </tr>`).join('')}
       </tbody></table></div>`;
-    requestAnimationFrame(() => { const tw = cat.querySelector('.table-wrap'); if (tw && typeof agregarScrollArriba==='function') agregarScrollArriba(tw); });
+
+    // Celular: una tarjeta por producto con el botón a todo lo ancho
+    const tarjetas = filas.map(f => {
+      const hecho = f.g.pendInv <= 0 && f.g.pendWix <= 0;
+      return `<div class="desp-card${hecho ? ' hecho' : ''}">
+        <div class="desp-card-top">
+          ${f.img(52)}
+          <div style="min-width:0">
+            <div class="desp-card-nombre">${f.g.nombre}</div>
+            <div class="desp-card-sku">SKU: ${f.g.sku||'—'}</div>
+          </div>
+        </div>
+        <div class="desp-card-nums">
+          <div class="desp-card-num"><span>Vendido</span><b style="color:var(--accent)">${f.g.vendido}</b></div>
+          <div class="desp-card-num"><span>Stock actual</span><b style="color:${stockColor(f.st,f.min)}">${f.st}</b></div>
+        </div>
+        <div class="desp-card-badges"><span style="font-size:11px;color:var(--text3);align-self:center">Inventario</span>${f.invBadge}<span style="font-size:11px;color:var(--text3);align-self:center;margin-left:4px">Wix</span>${f.wixBadge}</div>
+        <div class="desp-card-btn">${f.accion}</div>
+      </div>`;
+    }).join('');
+
+    cat.innerHTML = `<div class="desp-desktop">${tabla}</div><div class="desp-movil">${tarjetas}</div>`;
+    requestAnimationFrame(() => { const tw = cat.querySelector('.desp-desktop .table-wrap'); if (tw && typeof agregarScrollArriba==='function') agregarScrollArriba(tw); });
   }
 
   // ── Sección de productos manuales ──
