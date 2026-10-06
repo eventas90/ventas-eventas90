@@ -6960,23 +6960,110 @@ async function _recargarVentasSilencioso(evento) {
   }
 }
 
-function iniciarRealtimeVentas() {
-  // 1. Supabase Realtime
+// ── Ventas en tiempo real ────────────────────────────────────────────────────
+// La base de datos emite una señal {op, id} por broadcast (trigger
+// notificar_cambio_venta, topic 'ventas-signal') y aquí se descarga SOLO esa
+// venta con el RPC get_venta_una. Antes se usaba postgres_changes, que nunca
+// entregó eventos: el canal entra con la anon key y las policies de `ventas`
+// le ocultan todas las filas. La recarga completa (~0.24 MB) queda solo como
+// respaldo cada 10 min y cuando llegan muchos cambios juntos.
+let _ventasPendientes  = new Map();   // id -> 'INSERT' | 'UPDATE' | 'DELETE'
+let _ventasPendTimer   = null;
+let _ventasYaSuscrito  = false;
+let _ventasVisListener = false;
+
+function _onSenalVenta(p) {
+  if (!currentUser || !p || !p.id) return;
+  _ventasPendientes.set(p.id, p.op);
+  if (document.hidden) return;                       // se procesa al volver a la pestaña
+  clearTimeout(_ventasPendTimer);
+  _ventasPendTimer = setTimeout(_procesarSenalesVentas, 600);   // agrupa ráfagas
+}
+
+async function _procesarSenalesVentas() {
+  if (!currentUser || !_ventasPendientes.size) return;
+  const lote = [..._ventasPendientes.entries()];
+  _ventasPendientes.clear();
+
+  // Muchos cambios juntos (pestaña oculta mucho rato): una recarga completa sale igual
+  if (lote.length > 15) { await _recargarVentasSilencioso(null); _refrescarVistaVentas(); return; }
+
+  const nuevasDeOtros = [];
+  let faltaCliente = false;
+  for (const [id, op] of lote) {
+    try {
+      if (op === 'DELETE') { ventas = ventas.filter(v => v.id !== id); continue; }
+      const { data, error } = await sb.rpc('get_venta_una', { p_user: currentUser.user, p_id: id });
+      if (error) throw new Error(error.message);
+      if (!data) { ventas = ventas.filter(v => v.id !== id); continue; }
+      const v = _mapVentaRow(data);
+      const i = ventas.findIndex(x => x.id === id);
+      if (i >= 0) {
+        ventas[i] = v;
+      } else {
+        ventas.unshift(v);
+        if (op === 'INSERT' && String(v.vendedorId) !== String(currentUser.id)) nuevasDeOtros.push(v);
+      }
+      if (v.clienteId && !clientes.some(c => c.id === v.clienteId)) faltaCliente = true;
+    } catch (e) {
+      console.warn('⚠️ Venta en vivo falló, recargo todo:', e.message);
+      await _recargarVentasSilencioso(null);
+      _refrescarVistaVentas();
+      return;
+    }
+  }
+  if (faltaCliente) await _recargarVentasSilencioso(null);   // la venta trae un cliente nuevo
+  nuevasDeOtros.forEach(v =>
+    showToast(`🔔 Nueva venta — ${v.vendedorNombre || 'un vendedor'} · ${fmtLPS(v.total)}`, 'info', 5000));
+  _refrescarVistaVentas();
+}
+
+// Redibuja solo la pantalla que el usuario tiene abierta (nunca "Nueva venta",
+// para no tocar lo que está escribiendo).
+function _refrescarVistaVentas() {
   try {
-    _ventasChannel = sb.channel('ventas-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ventas' },
-          (payload) => _recargarVentasSilencioso(payload))
+    const activo = id => !!document.getElementById(id)?.classList.contains('active');
+    if (activo('tab-ventas')) {
+      if (_ventasSubActivo === 'lista')     renderHistorialVentas();
+      if (_ventasSubActivo === 'reporte')   renderReporteVendedores();
+      if (_ventasSubActivo === 'productos') renderReporteProductos();
+      if (_ventasSubActivo === 'despacho')  renderDespachoDia();
+    }
+    if (activo('tab-cobros')) renderCobros();
+  } catch (e) {
+    console.warn('⚠️ Refresco de vista falló:', e.message);
+  }
+}
+
+function iniciarRealtimeVentas() {
+  // 1. Señal en vivo por broadcast
+  try {
+    _ventasChannel = sb.channel('ventas-signal')
+      .on('broadcast', { event: 'cambio' }, (m) => _onSenalVenta(m.payload))
       .subscribe((status) => {
-        if (status === 'SUBSCRIBED') console.log('✅ Realtime ventas activo');
-        else if (status === 'CHANNEL_ERROR') console.warn('⚠️ Realtime ventas no disponible, usando auto-refresh');
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Ventas en vivo activas');
+          // Al reconectar (laptop suspendida, internet caído) se pudieron perder señales
+          if (_ventasYaSuscrito) _recargarVentasSilencioso(null).then(_refrescarVistaVentas);
+          _ventasYaSuscrito = true;
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('⚠️ Ventas en vivo no disponibles (' + status + '), queda el respaldo de 10 min');
+        }
       });
   } catch(e) {
     console.warn('⚠️ Realtime init falló:', e.message);
   }
 
-  // 2. Fallback: auto-refresh cada 10 min y solo con la pestaña visible.
-  //    Realtime (arriba) ya cubre los cambios en vivo; esto es solo red de seguridad.
-  //    A 2 min bajaba ventas+clientes completos (~0.24 MB gzip) 720 veces al día por pestaña.
+  // Señales que llegaron con la pestaña oculta: procesarlas al volver
+  if (!_ventasVisListener) {
+    _ventasVisListener = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && _ventasPendientes.size) _procesarSenalesVentas();
+    });
+  }
+
+  // 2. Respaldo: recarga completa cada 10 min y solo con la pestaña visible.
+  //    (A 2 min bajaba ventas+clientes completos 720 veces al día por pestaña.)
   _ventasAutoTimer = setInterval(() => {
     if (!document.hidden) _recargarVentasSilencioso(null);
   }, 10 * 60 * 1000);
@@ -12984,7 +13071,7 @@ function renderHistorialPrecios() {
 
 // ── COMPARTIR COTIZACIÓN ─────────────────────────────────────────────────────
 // El token de UltraMsg ya NO vive en la app: el envÃ­o pasa por la edge function
-// send-whatsapp (valida que el usuario estÃ© activo y usa el secreto ULTRAMSG_TOKEN).
+// send-whatsapp (valida que el usuario esté activo y usa el secreto ULTRAMSG_TOKEN).
 async function enviarWhatsApp(to, body) {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/send-whatsapp`, {
     method: 'POST',
