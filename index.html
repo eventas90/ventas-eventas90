@@ -1972,7 +1972,7 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
       <div id="vPanelNueva" style="display:none">
 
         <!-- Tipo de Venta -->
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:12px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:16px;padding:12px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
           <span style="font-size:13px;font-weight:700;color:var(--text2)">Tipo de Venta:</span>
           <div style="display:flex;gap:6px">
             <button id="vBtnFormal" onclick="setTipoVenta('formal')"
@@ -1985,6 +1985,7 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
             </button>
           </div>
           <span id="vTipoVentaHint" style="font-size:11px;color:var(--text3);margin-left:4px">Venta rápida sin datos formales — consumidor final</span>
+          <button class="btn btn-ghost btn-sm" onclick="abrirImportarPI()" title="Traer una venta facturada en Precio Inteligente para pagar su comisión" style="margin-left:auto;white-space:nowrap">&#128229; Traer de Precio Inteligente</button>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 380px;gap:20px;align-items:start">
@@ -8948,6 +8949,7 @@ async function guardarVenta() {
     })
     .catch((err) => {
       ocultarCargando();
+      if (/ventas_ref_pi_uniq/.test(err.message || '')) { showToast('⚠️ Esta venta de Precio Inteligente ya fue ingresada. Revisa el Historial de Ventas.', 'warn', 8000); return; }
       const msg = '📡 Error al guardar venta: ' + (err.message || 'Sin conexión');
       showToast('❌ ' + msg, 'error', 8000);
       mostrarErrorConexion(msg);
@@ -10823,6 +10825,7 @@ function getDespachoGrupos(fecha) {
   const map = {};
   (ventas||[]).forEach(v => {
     if (((v.fecha||'')+'').slice(0,10) !== fecha) return;
+    if (/\[PI vta_[0-9]+\]/.test(v.observaciones || '')) return;   // traída de Precio Inteligente: su inventario se descuenta allá
     (v.items||[]).forEach(it => {
       let prod = it.productoId ? productos.find(p => p.id === it.productoId) : null;
       if (!prod && it.sku) prod = productos.find(p => String(p.sku||'').trim() !== '' && String(p.sku).trim() === String(it.sku).trim());
@@ -12953,6 +12956,211 @@ async function toggleSilenciarCot(id) {
     renderHistorialCotizaciones();
     showToast(nuevo?`🔕 ${c.numero}: no recibirá avisos de vencimiento`:`🔔 ${c.numero}: avisos de vencimiento reactivados`,'success');
   } catch(e) { showToast('❌ Error: '+e.message,'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TRAER VENTA FACTURADA DE PRECIO INTELIGENTE (sistema viejo)
+//  Solo lectura: edge fn ventas-pi (este proyecto) → ventas-facturadas (viejo,
+//  x-api-key). La venta se carga en el formulario como FORMAL y el usuario la
+//  revisa y guarda. Se marca con "[PI vta_…]" en observaciones:
+//   · un índice único en la BD (ventas_ref_pi_uniq) impide ingresarla dos veces
+//   · el Despacho del día la ignora (su inventario se descuenta en Precio Inteligente)
+//  Un usuario con rol "ventas" solo puede traer sus propias ventas (comisión).
+// ═══════════════════════════════════════════════════════════════════════
+const PI_MARCA_RE = /\[PI (vta_[0-9]+)\]/;
+let _piVentas = [];
+
+function _piRefDe(v) {
+  const m = PI_MARCA_RE.exec((v && v.observaciones) || '');
+  return m ? m[1] : null;
+}
+function _piPosibleDuplicado(p) {
+  return ventas.find(v => !_piRefDe(v)
+    && String(v.fecha || '').slice(0, 10) === p.fecha
+    && String(v.vendedorId) === String(p.vendedor_id)
+    && Math.abs((+v.total || 0) - (+p.total || 0)) < 1) || null;
+}
+function _piEsDeOtro(p) {
+  return currentUser && currentUser.rol === 'ventas' && String(p.vendedor_id) !== String(currentUser.id);
+}
+
+function abrirImportarPI() {
+  document.getElementById('modalImportarPI')?.remove();
+  const hoy = _despachoHoyISO();
+  const inp = 'padding:7px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius2);color:var(--text);font-size:13px;outline:none';
+  document.body.insertAdjacentHTML('beforeend', `
+  <div id="modalImportarPI" onclick="if(event.target===this)this.remove()"
+    style="position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9000;display:flex;align-items:flex-start;justify-content:center;padding:32px 12px;overflow:auto">
+    <div class="card" style="width:100%;max-width:820px;margin:0">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:14px">
+        <div>
+          <div class="card-title">📥 Traer venta de Precio Inteligente</div>
+          <div class="card-sub">Ventas facturadas en el sistema viejo. Se cargan como venta <b>FORMAL</b>; revísala, completa lo que falte y guárdala.</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('modalImportarPI').remove()">✕</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+        <span style="font-size:12px;color:var(--text3)">Desde</span>
+        <input type="date" id="piDesde" value="${hoy}" style="${inp}">
+        <span style="font-size:12px;color:var(--text3)">Hasta</span>
+        <input type="date" id="piHasta" value="${hoy}" style="${inp}">
+        <button class="btn btn-primary btn-sm" onclick="buscarVentasPI()">🔍 Buscar</button>
+      </div>
+      <div id="piLista"></div>
+    </div>
+  </div>`);
+  buscarVentasPI();
+}
+
+async function buscarVentasPI() {
+  const el = document.getElementById('piLista'); if (!el) return;
+  const desde = (document.getElementById('piDesde') || {}).value || _despachoHoyISO();
+  const hasta = (document.getElementById('piHasta') || {}).value || desde;
+  el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3)"><div class="spinner" style="margin:0 auto 10px"></div>Consultando Precio Inteligente...</div>';
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/ventas-pi`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + SUPABASE_KEY },
+      body: JSON.stringify({ usuario: currentUser?.user || '', desde, hasta })
+    });
+    const j = await res.json();
+    if (!res.ok || j.error) throw new Error(j.error || ('HTTP ' + res.status));
+    _piVentas = j.datos || [];
+    renderListaPI();
+  } catch (e) {
+    el.innerHTML = `<div style="padding:16px;color:var(--red);font-size:13px">❌ No se pudo consultar Precio Inteligente: ${e.message}</div>`;
+  }
+}
+
+function renderListaPI() {
+  const el = document.getElementById('piLista'); if (!el) return;
+  if (!_piVentas.length) {
+    el.innerHTML = '<div style="text-align:center;padding:36px;color:var(--text3)"><div style="font-size:32px;margin-bottom:8px">🧾</div>No hay ventas facturadas en esas fechas.</div>';
+    return;
+  }
+  const yaIngresadas = new Map();
+  ventas.forEach(v => { const r = _piRefDe(v); if (r) yaIngresadas.set(r, v); });
+  const badge = (txt, col, bg) => `<span style="font-size:11px;font-weight:700;background:${bg};border:1px solid ${col}55;color:${col};border-radius:10px;padding:2px 9px;white-space:nowrap">${txt}</span>`;
+
+  el.innerHTML = _piVentas.map(p => {
+    const ya     = yaIngresadas.get(p.id);
+    const posib  = !ya ? _piPosibleDuplicado(p) : null;
+    const deOtro = _piEsDeOtro(p);
+    const sinCosto = (p.items || []).filter(it => !(+it.costo_lps > 0)).length;
+    const estado = ya     ? badge('✅ Ya ingresada', 'var(--green)', 'rgba(46,213,115,.1)')
+                 : deOtro ? badge('🔒 De otro vendedor', 'var(--text3)', 'rgba(90,100,128,.12)')
+                 : posib  ? badge('⚠️ Posible duplicado', 'var(--gold)', 'rgba(245,166,35,.1)')
+                 :          badge('Disponible', 'var(--accent)', 'rgba(61,106,255,.1)');
+    const productos = (p.items || []).map(it => `${+it.cantidad || 1} × ${it.nombre || it.sku || '—'}`).join(' · ');
+    return `<div style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:12px;margin-bottom:8px;${ya || deOtro ? 'opacity:.6' : ''}">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
+        <div style="min-width:0;flex:1">
+          <div style="font-size:14px;font-weight:700">${p.cliente?.nombre || p.cliente_nombre || '—'}${p.cliente?.rtn ? ` <span style="font-size:11px;color:var(--text3);font-weight:400">RTN ${p.cliente.rtn}</span>` : ''}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">${fmtFecha(p.fecha)} · 👤 ${p.vendedor_nombre || '—'} · ${p.metodo_pago_label || ''}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">${productos}</div>
+          ${posib ? `<div style="font-size:11px;color:var(--gold);margin-top:4px">Ya hay una venta a mano de ${posib.clienteNombre || '—'} por ${fmtLPS(posib.total)} ese día con el mismo vendedor.</div>` : ''}
+          ${sinCosto && !ya ? `<div style="font-size:11px;color:var(--gold);margin-top:4px">${sinCosto} producto(s) sin costo en Precio Inteligente — revisa el costo antes de guardar.</div>` : ''}
+        </div>
+        <div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+          <div style="font-size:16px;font-weight:900;color:var(--accent3)">${fmtLPS(p.total)}</div>
+          ${estado}
+          ${!ya && !deOtro ? `<button class="btn btn-primary btn-sm" onclick="cargarVentaPI('${p.id}')">📥 Cargar</button>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function cargarVentaPI(id) {
+  const p = _piVentas.find(x => x.id === id); if (!p) return;
+  if (ventas.some(v => _piRefDe(v) === id)) { showToast('⚠️ Esta venta ya fue ingresada', 'warn'); return; }
+  if (_piEsDeOtro(p)) { showToast('🔒 Solo puedes traer tus propias ventas', 'warn'); return; }
+  const posib = _piPosibleDuplicado(p);
+  if (posib && !confirm(`Ya hay una venta a mano de ${posib.clienteNombre || '—'} por ${fmtLPS(posib.total)} ese día con el mismo vendedor.\n\n¿Cargar esta de todos modos?`)) return;
+  if (vEditandoId && !confirm('Estás editando una venta. ¿Descartar los cambios y cargar esta?')) return;
+
+  document.getElementById('modalImportarPI')?.remove();
+  showTab('ventas');
+  vShowSub('nueva');
+  limpiarVenta();
+  setTipoVenta('formal');
+
+  // ── Cliente: buscarlo por nombre, teléfono o RTN; si no existe, crearlo con los datos del viejo
+  const c = p.cliente || {};
+  const nombre = (c.nombre || p.cliente_nombre || '').trim();
+  const soloDig = s => String(s || '').replace(/\D/g, '');
+  if (typeof limpiarCliente === 'function') limpiarCliente();
+  let match = null;
+  try { match = _buscarClienteDuplicado({ nombre, tel: c.tel, tel2: c.tel2 }, null); } catch (e) {}
+  if (!match && soloDig(c.rtn).length >= 10) {
+    const porRtn = clientes.find(x => soloDig(x.rtn) === soloDig(c.rtn));
+    if (porRtn) match = { cliente: porRtn };
+  }
+  if (match && match.cliente) {
+    seleccionarCliente(match.cliente.id, true);
+  } else if (nombre) {
+    const nuevo = { id: 'cli_' + Date.now(), nombre, ciudad: c.ciudad || '', tel: c.tel || '', tel2: c.tel2 || '',
+      email: c.email || '', rtn: c.rtn || '', direccion: c.direccion || '', direccionCasa: '', observaciones: '',
+      fechaCreado: new Date().toISOString() };
+    clientes.push(nuevo);
+    try { await sbSaveCliente(nuevo); } catch (e) { console.warn('Cliente de Precio Inteligente no guardado:', e.message); }
+    seleccionarCliente(nuevo.id, true);
+  }
+
+  // ── Fecha, envío, observaciones (con la marca que evita duplicados)
+  const fd = document.getElementById('vFecha'); if (fd && p.fecha) fd.value = p.fecha;
+  const env = document.getElementById('vEnvio'); if (env) env.value = +p.envio || 0;
+  const obs = document.getElementById('vObservaciones');
+  if (obs) obs.value = ((p.observaciones || '').trim() ? p.observaciones.trim() + '\n' : '') + `[PI ${p.id}]`;
+
+  // ── Productos con el precio y el COSTO con que se vendieron (si no traía costo, el del catálogo)
+  vItemsActuales = (p.items || []).map(it => {
+    const prod = it.producto_id ? productos.find(x => x.id === it.producto_id) : null;
+    const calc = prod ? calcProd(prod) : null;
+    const costo = +it.costo_lps > 0 ? +it.costo_lps : (calc ? +calc.costoTotalLPS.toFixed(2) : 0);
+    return {
+      tipo:        it.producto_id ? 'catalogo' : 'manual',
+      productoId:  it.producto_id || null,
+      sku:         it.sku || '',
+      descripcion: it.nombre || '',
+      nombre:      it.nombre || '',
+      cantidad:    +it.cantidad || 1,
+      precioFinal: +it.precio_final || 0,
+      precioLista: +it.precio > 0 ? +it.precio : (calc ? +calc.precioConISV.toFixed(2) : (+it.precio_final || 0)),
+      llevaISV:    !!it.lleva_isv,
+      isvPct:      +it.isv_pct || 0,
+      costoLPS:    costo,
+      imagen:      prod ? (prod.imagen || null) : null,
+      _id:         'vi_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)
+    };
+  });
+  renderItemsVenta();
+
+  // ── Descuento global
+  const dsc = +p.descuento || 0;
+  const _vda = document.getElementById('vDescActivo');  if (_vda) _vda.checked = dsc > 0;
+  const _vdv = document.getElementById('vDescValor');   if (_vdv) _vdv.value = p.descuento_valor != null ? p.descuento_valor : dsc;
+  const _vdb = document.getElementById('vDescTipoBtn'); if (_vdb) { const t = p.descuento_tipo || '%'; _vdb.textContent = t; _vdb.style.color = t === 'L' ? 'var(--accent3)' : 'var(--accent4)'; }
+  const _vdr = document.getElementById('vResDescRow');  if (_vdr) _vdr.style.display = dsc > 0 ? 'flex' : 'none';
+
+  // ── Método de pago y vendedor (si existen en este sistema)
+  poblarSelectorMetodoPago();
+  const selMP = document.getElementById('vMetodoPago');
+  const hayMP = !!(selMP && [...selMP.options].some(o => o.value === p.metodo_pago));
+  if (hayMP) selMP.value = p.metodo_pago;
+  onMetodoPagoChange(false);
+  poblarSelectorVendedor('vVendedor');
+  const selV = document.getElementById('vVendedor');
+  const hayV = !!(selV && [...selV.options].some(o => o.value === String(p.vendedor_id)));
+  if (hayV && !selV.disabled) selV.value = String(p.vendedor_id);
+  calcResumenVenta();
+
+  const faltan = [];
+  if (!hayMP) faltan.push('método de pago');
+  if (!hayV)  faltan.push(`vendedor (${p.vendedor_nombre || '—'} no existe aquí)`);
+  if (!(document.getElementById('vClienteDireccion')?.value || '').trim()) faltan.push('dirección del cliente');
+  if (vItemsActuales.some(it => !(it.costoLPS > 0))) faltan.push('costo de algún producto');
+  showToast(`📥 Venta de Precio Inteligente cargada — revísala y guarda${faltan.length ? ' · ⚠️ completa: ' + faltan.join(', ') : ''}`, faltan.length ? 'warn' : 'success', 8000);
 }
 
 async function convertirAVenta(id) {
