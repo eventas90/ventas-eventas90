@@ -7339,6 +7339,7 @@ async function cargarVentasYClientes() {
 
 // ── Inicializar pestaña ──
 async function initVentas() {
+  cargarCombos();   // combos para el buscador de productos (en segundo plano)
   // Mostrar loading en historial si ya estamos en esa vista
   const subAlEntrar = _ventasSubActivo;
   if (subAlEntrar === 'lista') {
@@ -8191,6 +8192,7 @@ function buscarProductoVenta() {
   const q   = (document.getElementById('vProdBuscar').value || '').toLowerCase().trim();
   const res = document.getElementById('vProdResultados');
   if (!q) { res.style.display = 'none'; return; }
+  if (!_combosCargados) cargarCombos().then(() => { if ((document.getElementById('vProdBuscar').value || '').toLowerCase().trim() === q) buscarProductoVenta(); });
 
   // Escáner sin Enter: si el texto coincide EXACTO con un SKU completo, agregar automático
   if (q.length >= 4) {
@@ -12373,6 +12375,7 @@ let _cotizacionOrigenId= null;
 async function initCotizaciones() {
   await Promise.all([
     cargarCotizaciones(),       // siempre recargar para tener token_publico actualizado
+    cargarCombos(),             // combos para el buscador de productos
     cargarVentasYClientes(),    // garantiza clientes[] cargado aunque no se haya visitado Ventas
   ]);
   poblarSelectorVendedorCot();
@@ -12694,13 +12697,18 @@ function cActualizarItem(id, campo, valor) {
 function buscarProductoCot(q) {
   const res = document.getElementById('cProdResultados');
   if (!q || q.length<2) { res.style.display='none'; return; }
+  // Los combos se descargan una sola vez; si aún no están, cargarlos y repetir la búsqueda
+  if (!_combosCargados) { cargarCombos().then(() => { const b = document.getElementById('cProdBuscar'); if (b && b.value === q) buscarProductoCot(q); }); }
   const ql = q.toLowerCase();
   const matches = productos.filter(p=>
     (p.producto||'').toLowerCase().includes(ql)||(p.sku||'').toLowerCase().includes(ql)
   ).slice(0,10);
-  if (!matches.length) { res.style.display='none'; return; }
+  const combosEnc = (combos||[]).filter(c =>
+    (c.nombre||'').toLowerCase().includes(ql) || (c.codigo||'').toLowerCase().includes(ql)
+  ).slice(0,5);
+  if (!matches.length && !combosEnc.length) { res.style.display='none'; return; }
   res.style.display='block';
-  res.innerHTML = matches.map(p=>{
+  let html = matches.map(p=>{
     const c=calcProd(p);
     return `<div onclick="cAgregarProducto('${p.id}')" style="padding:10px 12px;cursor:pointer;display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--border2)" onmouseenter="this.style.background='var(--bg4)'" onmouseleave="this.style.background=''">
       ${p.imagen?`<div class="prod-thumb" style="width:32px;height:32px;flex-shrink:0"><img src="${p.imagen}"></div>`:'<div style="width:32px;height:32px;flex-shrink:0;border-radius:4px;background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>'}
@@ -12710,6 +12718,77 @@ function buscarProductoCot(q) {
       </div>
     </div>`;
   }).join('');
+  if (combosEnc.length) {
+    html += `<div style="padding:6px 12px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent);background:var(--bg4);border-bottom:1px solid var(--border2)">🎁 Combos</div>`;
+    html += combosEnc.map(combo => {
+      let armables = Infinity;
+      (combo.items||[]).forEach(ci => {
+        const p = productos.find(x => x.id === ci.productoId);
+        armables = Math.min(armables, p ? Math.floor((parseInt(p.cantidad)||0) / (ci.cantidad||1)) : 0);
+      });
+      if (armables === Infinity) armables = 0;
+      const col = armables === 0 ? 'var(--red)' : armables <= 2 ? 'var(--gold)' : 'var(--green)';
+      const n = (combo.items||[]).length;
+      return `<div onclick="cAgregarCombo('${combo.id}')" style="padding:10px 12px;cursor:pointer;display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--border2)" onmouseenter="this.style.background='var(--bg4)'" onmouseleave="this.style.background=''">
+        ${combo.imagenUrl?`<div class="prod-thumb" style="width:32px;height:32px;flex-shrink:0"><img src="${combo.imagenUrl}"></div>`:'<div style="width:32px;height:32px;flex-shrink:0;border-radius:4px;background:rgba(61,106,255,.12);display:flex;align-items:center;justify-content:center;font-size:16px">🎁</div>'}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${combo.nombre}</div>
+          <div style="font-size:11px;color:var(--text3)">${combo.codigo||'—'} · ${n} producto${n!==1?'s':''} · Armables: <strong style="color:${col}">${armables}</strong></div>
+        </div>
+        <div style="font-size:13px;font-weight:700;color:var(--green);flex-shrink:0">${fmtLPS(combo.precioFinal)}</div>
+      </div>`;
+    }).join('');
+  }
+  res.innerHTML = html;
+}
+
+// Agrega un combo a la cotización igual que en Nueva Venta: un ítem por cada producto
+// del combo, con el precio del combo repartido en proporción al precio de cada uno.
+// Cada ítem lleva la nota "Parte del combo", que sale impresa en la cotización.
+function cAgregarCombo(comboId) {
+  const combo = (combos||[]).find(c => c.id === comboId);
+  if (!combo || !combo.items?.length) return;
+  const faltan = combo.items.filter(ci => !productos.find(x => x.id === ci.productoId));
+  if (faltan.length) { showToast(`⚠️ El combo "${combo.nombre}" tiene ${faltan.length} producto(s) que ya no están en el catálogo`, 'warn', 6000); return; }
+
+  let armables = Infinity;
+  combo.items.forEach(ci => {
+    const p = productos.find(x => x.id === ci.productoId);
+    armables = Math.min(armables, Math.floor((parseInt(p.cantidad)||0) / (ci.cantidad||1)));
+  });
+  if (armables === 0) showToast(`⚠️ Sin stock suficiente para armar el combo "${combo.nombre}"`, 'warn', 5000);
+
+  const totalLista = combo.items.reduce((acc, ci) => {
+    const p = productos.find(x => x.id === ci.productoId);
+    return acc + calcProd(p).precioFinalDesc * (ci.cantidad||1);
+  }, 0);
+  const ratio = totalLista > 0 ? combo.precioFinal / totalLista : 1;
+
+  const stamp = Date.now();
+  const nuevos = combo.items.map((ci, idx) => {
+    const p = productos.find(x => x.id === ci.productoId);
+    const c = calcProd(p);
+    const isv = p.estado === 'Nuevo';
+    return {
+      tipo: 'catalogo', productoId: ci.productoId, sku: p.sku, descripcion: p.producto,
+      imagen: p.imagen || null, llevaISV: isv, isvPct: isv ? parametros.isvNuevo : 0,
+      precioLista: +c.precioConISV.toFixed(2),
+      precioFinal: +(c.precioFinalDesc * ratio).toFixed(2),
+      descuentoItemTipo: '%',
+      cantidad: ci.cantidad || 1,
+      notaItem: `🎁 Parte del combo: ${combo.nombre}`,
+      _comboId: combo.id, _comboNombre: combo.nombre,
+      _id: 'vi_' + stamp + '_' + idx
+    };
+  });
+  // Los ítems nuevos van arriba, en el mismo orden del combo
+  cItemsActuales.unshift(...nuevos);
+
+  document.getElementById('cProdBuscar').value = '';
+  document.getElementById('cProdResultados').style.display = 'none';
+  renderItemsCotizacion();
+  showToast(`✅ Combo "${combo.nombre}" agregado — ${nuevos.length} producto${nuevos.length!==1?'s':''}`, 'success');
+  setTimeout(() => { const b = document.getElementById('cProdBuscar'); if (b) b.focus(); }, 50);
 }
 
 function cAgregarProducto(prodId) {
