@@ -10202,6 +10202,9 @@ function renderReporteVendedores() {
   if (!rows.length) {
     tablaEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text3)">Sin datos para el período seleccionado</div>';
     const gel = document.getElementById('vReporteGraficos'); if(gel) gel.style.display='none';
+    // Sin ventas en el periodo: igual redibujar la grafica mensual y el top (tienen su propio rango),
+    // si no se quedaban mostrando los datos del vendedor/periodo anterior
+    const el3Dv = document.getElementById('vReportePastel3D'); if (el3Dv) el3Dv.innerHTML = _cardVentasMensualSafe() + _cardTopProductosSafe();
     return;
   }
 
