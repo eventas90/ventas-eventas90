@@ -10303,7 +10303,7 @@ function _renderGraficosReporte(lista, rows) {
   }
 
   // ── Pastel 3D abajo ──────────────────────────────────────────────────────
-  if (!el3D || !rows.length) { if(el3D) el3D.innerHTML = _cardVentasMensualSafe(); return; }
+  if (!el3D || !rows.length) { if(el3D) el3D.innerHTML = _cardVentasMensualSafe() + _cardTopProductosSafe(); return; }
   const pieData = rows.slice(0,10).map((r,i) => ({ label:r.nombre, valor:r.totalVentas, color:COLORS[i%COLORS.length] }));
   const pieTotal = pieData.reduce((a,d)=>a+d.valor,0);
   window._vPieData = pieData;
@@ -10325,11 +10325,111 @@ function _renderGraficosReporte(lista, rows) {
           </div>`).join('')}
       </div>
     </div>
-  </div>` + _cardVentasMensualSafe();
+  </div>` + _cardVentasMensualSafe() + _cardTopProductosSafe();
 }
 
 // Nunca dejar que un error de la grafica mensual oculte el resto del reporte.
 // Lee el filtro de vendedor directamente de la pantalla (vidFilt no existe en este ambito).
+// ── Top 20 productos (igual que "Top productos" de POS Caja → Reportes) ─────────
+// Tiene su propio rango de fechas: por defecto desde que arrancó el sistema
+// (julio 2026) hasta hoy, sin importar el período elegido arriba. Respeta el
+// filtro de vendedor y el rol del usuario. Fecha = fecha de la venta.
+//  · L vendidos = precio cobrado × cantidad (con ISV)
+//  · Unidades   = cantidad
+//  · Utilidad   = (precio sin ISV − costo) × cantidad; un producto sin costo no suma utilidad
+// Las líneas de "Envío" no cuentan como producto.
+const TOP_PROD_INICIO = '2026-07-01';
+let _topProd = { metrica: 'ventas', desde: TOP_PROD_INICIO, hasta: '' };
+
+function _cardTopProductosSafe() {
+  try {
+    return `<div id="vTopProductosCard" class="card" style="padding:20px;margin-top:16px">${_htmlTopProductos()}</div>`;
+  } catch (e) {
+    console.error('Top productos:', e);
+    return '<div class="card" style="padding:14px;margin-top:16px;color:var(--red);font-size:12px">No se pudo dibujar el top de productos: ' + (e && e.message ? e.message : e) + '</div>';
+  }
+}
+
+function topProdSet(campo, valor) {
+  _topProd[campo] = valor;
+  const el = document.getElementById('vTopProductosCard');
+  if (!el) return;
+  try { el.innerHTML = _htmlTopProductos(); }
+  catch (e) { el.innerHTML = '<div style="color:var(--red);font-size:12px">No se pudo dibujar el top de productos: ' + e.message + '</div>'; }
+}
+
+function _htmlTopProductos() {
+  const hoy = _despachoHoyISO();
+  const desde = _topProd.desde || TOP_PROD_INICIO;
+  const hasta = _topProd.hasta || hoy;
+  const vf = (document.getElementById('vRepVendedor') || {}).value || '';
+
+  let lista = rentasPorRol(ventas);
+  if (vf) lista = lista.filter(v => String(v.vendedorId) === String(vf));
+  lista = lista.filter(v => { const f = String(v.fecha || '').slice(0, 10); return f >= desde && f <= hasta; });
+
+  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+  const agg = {};
+  let lineasSinCosto = 0;
+  lista.forEach(v => (v.items || []).forEach(it => {
+    const nombre = it.descripcion || it.nombre || it.sku || '(sin nombre)';
+    if (/^env[ií]o$/i.test(String(nombre).trim())) return;
+    const key = it.productoId ? 'p:' + it.productoId : (it.sku ? 's:' + norm(it.sku) : 'n:' + norm(nombre));
+    const cant  = parseFloat(it.cantidad) || 0;
+    const precio = parseFloat(it.precioFinal) || 0;
+    const sinISV = it.llevaISV ? precio / (1 + (parseFloat(it.isvPct) || 0)) : precio;
+    const costo = parseFloat(it.costoLPS) || 0;
+    if (!agg[key]) agg[key] = { nombre, sku: it.sku || '', ventas: 0, unidades: 0, utilidad: 0, nVentas: 0 };
+    const a = agg[key];
+    a.ventas   += precio * cant;
+    a.unidades += cant;
+    if (costo > 0) a.utilidad += (sinISV - costo) * cant; else lineasSinCosto++;
+    a.nVentas++;
+  }));
+
+  const met = _topProd.metrica;
+  const filas = Object.values(agg).sort((a, b) => b[met] - a[met]).slice(0, 20);
+  const max = Math.max(1, ...filas.map(f => f[met]));
+  const fmtU = n => (Math.round(n * 100) / 100).toLocaleString('es-HN') + ' u.';
+  const fmt  = n => met === 'unidades' ? fmtU(n) : fmtLPS(n);
+  const color = met === 'utilidad' ? 'var(--gold)' : met === 'unidades' ? 'var(--accent3)' : 'var(--accent)';
+
+  const pill = (id, tx) => `<button onclick="topProdSet('metrica','${id}')" style="border:none;cursor:pointer;border-radius:999px;padding:5px 12px;font-size:11px;font-weight:700;${met === id ? 'background:var(--accent);color:#fff' : 'background:var(--bg3);color:var(--text2)'}">${tx}</button>`;
+  const inp = 'padding:6px 9px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius2);color:var(--text);font-size:12px;outline:none';
+
+  const barras = filas.length ? filas.map((f, i) => {
+    const pct = Math.max(0, (100 * f[met]) / max);
+    const tip = `${f.nombre}${f.sku ? ' · SKU ' + f.sku : ''}\nVendido: ${fmtLPS(f.ventas)} · ${fmtU(f.unidades)} · Utilidad: ${fmtLPS(f.utilidad)}`;
+    return `<div style="font-size:12px" title="${tip.replace(/"/g, '&quot;')}">
+      <div style="display:flex;justify-content:space-between;gap:10px">
+        <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)">${i + 1}. ${f.nombre}</span>
+        <span style="font-weight:800;font-variant-numeric:tabular-nums;color:var(--text)">${fmt(f[met])}</span>
+      </div>
+      <div style="margin-top:3px;height:6px;border-radius:4px;background:var(--bg3)"><div style="height:6px;border-radius:4px;width:${pct.toFixed(1)}%;background:${color}"></div></div>
+    </div>`;
+  }).join('') : '<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px">Sin ventas en este período</div>';
+
+  const nota = met === 'utilidad' && lineasSinCosto
+    ? `<div style="font-size:11px;color:var(--gold);margin-top:10px">⚠️ ${lineasSinCosto} línea(s) vendida(s) sin costo no suman utilidad.</div>` : '';
+
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+      <div style="font-weight:700;font-size:13px">🏆 Top 20 productos</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${pill('ventas', 'L vendidos')}${pill('unidades', 'Unidades')}${pill('utilidad', 'Utilidad')}</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <span style="font-size:11px;color:var(--text3)">Desde</span>
+      <input type="date" value="${desde}" onchange="topProdSet('desde', this.value)" style="${inp}">
+      <span style="font-size:11px;color:var(--text3)">Hasta</span>
+      <input type="date" value="${hasta}" onchange="topProdSet('hasta', this.value)" style="${inp}">
+      ${desde !== TOP_PROD_INICIO || (_topProd.hasta && _topProd.hasta !== hoy)
+        ? `<button class="btn btn-ghost btn-sm" onclick="_topProd.desde=TOP_PROD_INICIO;_topProd.hasta='';topProdSet('metrica',_topProd.metrica)">↺ Desde el inicio</button>` : ''}
+      <span style="font-size:11px;color:var(--text3)">${lista.length} venta(s)${vf ? ' · vendedor filtrado' : ''}</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:9px">${barras}</div>
+    ${nota}`;
+}
+
 function _cardVentasMensualSafe() {
   try {
     const vf = (document.getElementById('vRepVendedor') || {}).value || '';
