@@ -256,7 +256,7 @@ async function cargar() {
             const precioConIsv = parseFloat(it.precio_final || it.precioUnitario || it.precio_unitario || it.precio || 0);
             const listaConIsv  = parseFloat(it.precio_lista || precioConIsv);
             const isv          = it.lleva_isv || it.isv || it.aplicaISV || false;
-            const isvPct       = parseFloat(it.isv_pct || (isv ? 0.15 : 0));
+            const isvPct       = isv ? parseFloat(it.isv_pct || 0.15) : 0;   // sin ISV marcado: no dividir aunque el producto traiga isv_pct guardado
             const divisor      = 1 + isvPct;
             // Precios SIN ISV (como el PDF)
             const precioSinIsv = precioConIsv / divisor;
@@ -306,7 +306,7 @@ async function cargar() {
         <div class="total-row final"><span class="tl">TOTAL</span><span class="tv">${fmtLPS(c.total)}</span></div>
         ${(() => {
           const ahorroTotal = items.reduce((acc, it) => {
-            const isvPct   = parseFloat(it.isv_pct || (it.lleva_isv ? 0.15 : 0));
+            const isvPct   = it.lleva_isv ? parseFloat(it.isv_pct || 0.15) : 0;
             const divisor  = 1 + isvPct;
             const lista    = parseFloat(it.precio_lista || it.precio_final || 0) / divisor;
             const final    = parseFloat(it.precio_final || 0) / divisor;
