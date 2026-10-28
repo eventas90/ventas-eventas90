@@ -3134,6 +3134,7 @@ function rowToProducto(r) {
     webPublicado:  r.web_publicado || false,
     invelec:        r.invelec        || false,
     descontinuado:  r.descontinuado  || false,
+    tipoCambio:    parseFloat(r.tipo_cambio)  || 0,
     fechaIngreso:  r.fecha_ingreso || '',
     ultimaModif:   r.ultima_modif  || ''
   };
@@ -3672,7 +3673,8 @@ let productosPendientes = [];
 
 // ===== CÁLCULOS =====
 function calcProd(p) {
-  const tc = parametros.tipoCambio;
+  // Cada producto conserva la tasa con la que se ingresó/editó en Precio Inteligente; si no viene, usa la de Parámetros
+  const tc = parseFloat(p.tipoCambio) || parametros.tipoCambio;
   const costoExtraUSD = parseFloat(p.costoExtra)||0;
   const costoProvUSD  = parseFloat(p.costoUSD)||0;
   const fleteL        = parseFloat(p.fleteL)||0;

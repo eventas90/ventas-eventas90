@@ -1222,7 +1222,7 @@ function showToast(msg, type='info', dur=3500) {
    CALC PROD (precio desde catálogo)
 ════════════════════════════════════════════ */
 function calcProd(p) {
-  const tc             = parametros.tipoCambio;
+  const tc             = parseFloat(p.tipoCambio) || parametros.tipoCambio; // tasa propia del producto
   const costoExtraUSD  = parseFloat(p.costoExtra)||0;
   const costoProvUSD   = parseFloat(p.costoUSD)||0;
   const fleteL         = parseFloat(p.fleteL)||0;
@@ -1265,7 +1265,8 @@ function rowToProducto(r) {
     overrideBanda:r.override_banda||'',
     ajusteManual: parseFloat(r.ajuste_manual)||0,
     descuento:    parseFloat(r.descuento)||0,
-    imagen:       r.imagen       || null
+    imagen:       r.imagen       || null,
+    tipoCambio:   parseFloat(r.tipo_cambio)||0
   };
 }
 
