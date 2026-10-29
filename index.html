@@ -10932,7 +10932,7 @@ function getDespachoGrupos(fecha) {
   const map = {};
   (ventas||[]).forEach(v => {
     if (((v.fecha||'')+'').slice(0,10) !== fecha) return;
-    if (/\[PI vta_[0-9]+\]/.test(v.observaciones || '')) return;   // traída de Precio Inteligente: su inventario se descuenta allá
+    // Las traídas de Precio Inteligente (POS) también entran: el inventario se descuenta a mano aquí
     (v.items||[]).forEach(it => {
       let prod = it.productoId ? productos.find(p => p.id === it.productoId) : null;
       if (!prod && it.sku) prod = productos.find(p => String(p.sku||'').trim() !== '' && String(p.sku).trim() === String(it.sku).trim());
@@ -13148,7 +13148,7 @@ async function toggleSilenciarCot(id) {
 //  x-api-key). La venta se carga en el formulario como FORMAL y el usuario la
 //  revisa y guarda. Se marca con "[PI vta_…]" en observaciones:
 //   · un índice único en la BD (ventas_ref_pi_uniq) impide ingresarla dos veces
-//   · el Despacho del día la ignora (su inventario se descuenta en Precio Inteligente)
+//   · sale en el Despacho del día como cualquier venta (el inventario se descuenta a mano)
 //  Un usuario con rol "ventas" solo puede traer sus propias ventas (comisión).
 // ═══════════════════════════════════════════════════════════════════════
 const PI_MARCA_RE = /\[PI (vta_[0-9]+)\]/;
