@@ -24,7 +24,11 @@ with vd as (
   select v.*,
          (v.metodo_pago = 'parcial' and coalesce(v.saldo_pendiente,0) > 0) as pendiente,
          greatest(coalesce(v.total,0) - case when v.metodo_pago = 'parcial' then coalesce(v.saldo_pendiente,0) else 0 end, 0) as cobrado,
-         greatest(coalesce(v.subtotal_sin_isv,0) - coalesce(v.utilidad_bruta,0) - coalesce(v.descuento,0), 0) as costo
+         greatest(coalesce(v.subtotal_sin_isv,0) - coalesce(v.utilidad_bruta,0) - coalesce(v.descuento,0), 0) as costo,
+         case when v.metodo_pago in ('efectivo_ce','deposito_cancel','deposito_ce') then 'efectivo_transf'
+              when v.metodo_pago in ('mp_1778032329130','link_cancel','boton_ce') then 'tarjeta_link'
+              when v.metodo_pago = 'parcial' then 'abono_credito'
+              else 'sin_especificar' end as grupo_pago
   from ventas v
   where v.fecha between p_desde and p_hasta
 ),
@@ -66,6 +70,9 @@ vend as (
          round(sum(case when pendiente then saldo_pendiente else 0 end),2) as por_cobrar
   from vd2 group by 1 order by 3 desc
 ),
+grp as (
+  select grupo_pago, count(*) as n, round(sum(cobrado),2) as cobrado from vd2 group by 1
+),
 dia as (
   select fecha, count(*) as n, round(sum(total),2) as total
   from vd2 group by 1 order by 1
@@ -81,6 +88,7 @@ select jsonb_build_object(
   'roi_pct', case when tot.costo > 0 then round(tot.utilidad / tot.costo * 100, 1) else null end,
   'cobros_creditos_anteriores', cred.cobros_creditos_anteriores,
   'n_cobros_anteriores', cred.n_cobros_anteriores,
+  'cobrado_por_grupo', (select coalesce(jsonb_object_agg(grupo_pago, jsonb_build_object('n', n, 'cobrado', cobrado)), '{}'::jsonb) from grp),
   'por_vendedor', (select coalesce(jsonb_agg(to_jsonb(vend)), '[]'::jsonb) from vend),
   'por_dia', (select coalesce(jsonb_agg(to_jsonb(dia)), '[]'::jsonb) from dia)
 )

@@ -63,13 +63,21 @@ function bloqueCifras(r: any, etiqueta: string): string {
     : `\n⏳ *Pendiente de cobrar:* L 0.00`;
   const cobrosViejos = num(r.cobros_creditos_anteriores) > 0
     ? `\n💳 Cobros de créditos anteriores: ${fmtL(r.cobros_creditos_anteriores)} (${r.n_cobros_anteriores})` : '';
+  // Con cuánto dinero se cuenta: efectivo/depósito llega de inmediato; tarjeta/link lo liquida el banco después
+  const g = r.cobrado_por_grupo || {};
+  const gl = (k: string) => ({ n: num(g[k]?.n), m: num(g[k]?.cobrado) });
+  const ef = gl('efectivo_transf'), tj = gl('tarjeta_link'), ab = gl('abono_credito'), se = gl('sin_especificar');
+  const grupos = `\n   💵 Efectivo / transferencia / depósito: ${fmtL(ef.m)} (${ef.n})` +
+    `\n   💳 Tarjeta POS / link de pago: ${fmtL(tj.m)} (${tj.n})` +
+    (ab.m > 0 ? `\n   🤝 Abonos de ventas a crédito: ${fmtL(ab.m)} (método no registrado)` : '') +
+    (se.m > 0 ? `\n   ❔ Sin método especificado: ${fmtL(se.m)} (${se.n})` : '');
   return `💰 *Ventas totales${etiqueta}:* ${fmtL(r.total)}
    ${r.ventas} venta${r.ventas === 1 ? '' : 's'} (incluye las ventas a crédito completas)
 🧾 *Ventas totales sin ISV:* ${fmtL(r.sin_isv)}
    ISV: ${fmtL(r.isv)}
 
 ✅ *Total cobrado (con ISV):* ${fmtL(r.cobrado)}
-   contado completo + solo el abono de las ventas a crédito
+   contado completo + solo el abono de las ventas a crédito${grupos}
 ✅ *Total cobrado sin ISV:* ${fmtL(r.cobrado_sin_isv)}${credito}${cobrosViejos}
 
 📦 *Productos:* ${fmtN(r.unidades)} unidad${num(r.unidades) === 1 ? '' : 'es'} en ${r.lineas} línea${r.lineas === 1 ? '' : 's'}
