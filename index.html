@@ -2397,6 +2397,11 @@ tbody td { padding: 11px 14px; color: var(--text); white-space: nowrap; }
               style="padding:7px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius2);color:var(--text);font-size:13px;outline:none">
               <option value="">Todos los métodos de pago</option>
             </select>
+            <select id="vRPPCosto" onchange="renderReporteProductos()" title="Productos vendidos sin costo registrado (sin costo no hay utilidad ni comisión correcta)"
+              style="display:none;padding:7px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius2);color:var(--text);font-size:13px;outline:none">
+              <option value="">Con y sin costo</option>
+              <option value="sin">⚠️ Solo sin costo</option>
+            </select>
             <button class="btn btn-ghost btn-sm" onclick="vRPPSetPeriodo('mes')">Este mes</button>
             <button class="btn btn-ghost btn-sm" onclick="vRPPSetPeriodo('semana')">Esta semana</button>
             <button class="btn btn-ghost btn-sm" onclick="vRPPSetPeriodo('hoy')">Hoy</button>
@@ -7410,6 +7415,7 @@ let _ventaSnapshot   = null;    // Snapshot de la venta original al entrar a edi
 
 function vShowSub(sub) {
   _ventasSubActivo = sub;
+  if (sub !== 'nueva') _vRPPVolver = false;
   ['nueva','lista','reporte','productos','despacho','clientes'].forEach(s => {
     const panel = document.getElementById('vPanel' + s.charAt(0).toUpperCase() + s.slice(1));
     const btn   = document.getElementById('vSub'   + s.charAt(0).toUpperCase() + s.slice(1));
@@ -8948,8 +8954,9 @@ async function guardarVenta() {
       }
       ocultarCargando();
       showToast('✅ Venta guardada correctamente', 'success');
+      const _volverRPP = _vRPPVolver && !!vEditandoId;
       limpiarVenta();
-      vShowSub('lista');
+      vShowSub(_volverRPP ? 'productos' : 'lista');
     })
     .catch((err) => {
       ocultarCargando();
@@ -10075,8 +10082,9 @@ function cancelarEdicionVenta() {
     if (!confirm('⚠️ Tienes cambios sin guardar.\n\n¿Deseas salir sin actualizar la venta?')) return;
   }
   // Sin cambios o confirmó salir
+  const _volverRPP = _vRPPVolver;
   limpiarVenta();
-  vShowSub('lista');
+  vShowSub(_volverRPP ? 'productos' : 'lista');
 }
 
 async function eliminarVenta(id) {
@@ -10637,6 +10645,9 @@ function _getNombresSeleccionados() {
 }
 
 // ===== REPORTE POR PRODUCTO =====
+// Si la edición de una venta se abrió desde este reporte, al guardar o cancelar se vuelve
+// aquí (con los mismos filtros) en vez de ir al Historial — para corregir costos en serie.
+let _vRPPVolver = false;
 
 function poblarRPPPago() {
   const sel = document.getElementById('vRPPPago');
@@ -10695,6 +10706,11 @@ function renderReporteProductos() {
   const buscar  = ((document.getElementById('vRPPBuscar')||{}).value || '').toLowerCase().trim();
   const vendId  = (document.getElementById('vRPPVendedor')||{}).value || '';
   const pago    = (document.getElementById('vRPPPago')||{}).value    || '';
+  // Filtro de costo: solo admin/gerencia, que son quienes pueden corregirlo al editar la venta
+  const puedeEditar = ['admin','gerencia'].includes(currentUser?.rol);
+  const selCosto = document.getElementById('vRPPCosto');
+  if (selCosto) selCosto.style.display = puedeEditar ? '' : 'none';
+  const soloSinCosto = puedeEditar && selCosto?.value === 'sin';
 
   // Flatten all ventas → items
   let filas = [];
@@ -10736,7 +10752,8 @@ function renderReporteProductos() {
         const utilidad = costoU > 0 ? (sinISV - costoU) * qty : 0;
         filas.push({
           fecha, ventaId: v.id,
-          sku, nombre: nom,
+          sku, nombre: nom, productoId: it.productoId || null,
+          sinCosto: !(costoU > 0),
           cantidad: qty, precioUnit: pUnit, subtotal: sub,
           cliente:    v.clienteNombre  || '—',
           vendedor:   v.vendedorNombre || '—',
@@ -10755,6 +10772,10 @@ function renderReporteProductos() {
   if (buscar) {
     filas = filas.filter(f => f.sku.toLowerCase().includes(buscar) || f.nombre.toLowerCase().includes(buscar) || f.cliente.toLowerCase().includes(buscar));
   }
+
+  // Líneas sin costo dentro de los demás filtros (las ventas sin detalle no cuentan)
+  const nSinCosto = filas.filter(f => f.sinCosto).length;
+  if (soloSinCosto) filas = filas.filter(f => f.sinCosto);
 
   // Orden: por defecto fecha desc; o por la columna elegida (Utilidad / ROI)
   if (_rppSort.col === 'utilidad' || _rppSort.col === 'roi') {
@@ -10796,6 +10817,9 @@ function renderReporteProductos() {
     <div class="stat-card"><div class="stat-label">Utilidad Bruta</div><div class="stat-value stat-gold">${fmtLPS(totUtilidad)}</div><div class="stat-sub">ROI ${totCosto>0?fmtPct(totUtilidad/totCosto):'—'}</div></div>
     <div class="stat-card"><div class="stat-label">Productos Únicos</div><div class="stat-value stat-gold">${skusUnicos}</div></div>
     <div class="stat-card"><div class="stat-label">Clientes</div><div class="stat-value stat-teal">${clientesUniq}</div></div>
+    ${puedeEditar ? `<div class="stat-card" style="cursor:pointer;${nSinCosto ? 'border-color:rgba(245,166,35,.55)' : ''}" onclick="const s=document.getElementById('vRPPCosto');s.value=s.value==='sin'?'':'sin';renderReporteProductos()" title="${soloSinCosto ? 'Clic para ver todo' : 'Clic para ver solo las líneas sin costo'}">
+      <div class="stat-label">⚠️ Sin costo</div><div class="stat-value" style="color:${nSinCosto ? 'var(--gold)' : 'var(--green)'}">${nSinCosto}</div>
+      <div class="stat-sub">${nSinCosto ? (soloSinCosto ? 'mostrando solo estas · clic para ver todo' : 'clic para verlas') : 'todo con costo ✅'}</div></div>` : ''}
   `;
 
   if (resDes) {
@@ -10808,7 +10832,7 @@ function renderReporteProductos() {
   }
 
   if (!filas.length) {
-    body.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:32px;color:var(--text3)">Sin resultados para los filtros aplicados</td></tr>';
+    body.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:32px;color:var(--text3)">${soloSinCosto ? '✅ No hay productos sin costo en este período' : 'Sin resultados para los filtros aplicados'}</td></tr>`;
     return;
   }
 
@@ -10816,7 +10840,14 @@ function renderReporteProductos() {
     ? `<span style="background:rgba(243,156,18,.18);color:#f39c12;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700">🤝 Informal</span>`
     : `<span style="background:rgba(61,106,255,.15);color:var(--accent);padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700">🧾 Formal</span>`;
   const pagoIcon = { efectivo:'💵', tarjeta:'💳', transferencia:'🏦', parcial:'📆', wix:'🛍️', otro:'💱' };
-  const puedeEditar = ['admin','gerencia'].includes(currentUser?.rol);
+  // Costo de catálogo como referencia para corregir rápido (solo si el catálogo trae costo)
+  const costoCatalogo = f => {
+    if (!puedeEditar || !f.sinCosto) return '';
+    const p = (f.productoId && productos.find(x => x.id === f.productoId))
+           || (f.sku !== '—' && productos.find(x => x.sku === f.sku));
+    const c = p ? calcProd(p).costoTotalLPS : 0;
+    return c > 0 ? ` · catálogo ${fmtLPS(c)}` : '';
+  };
   // Nombre legible del método de pago (en vez del código interno mp_1778...)
   const nombrePago = f => {
     if (f.metodoPagoLabel) return f.metodoPagoLabel;
@@ -10828,7 +10859,7 @@ function renderReporteProductos() {
     <tr style="border-bottom:1px solid var(--border2);transition:background .12s" onmouseenter="this.style.background='var(--bg3)'" onmouseleave="this.style.background=''">
       <td style="padding:8px 12px;font-size:12px;color:var(--text3);white-space:nowrap">${f.fecha}</td>
       <td style="padding:8px 12px;font-size:12px;font-family:monospace;color:var(--text2)">${f.sku}</td>
-      <td style="padding:8px 12px;font-size:13px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.nombre}">${f.nombre}</td>
+      <td style="padding:8px 12px;font-size:13px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.nombre}">${f.nombre}${puedeEditar && f.sinCosto ? `<div style="font-size:11px;color:var(--gold)">⚠️ Sin costo${costoCatalogo(f)}</div>` : ''}</td>
       <td style="padding:8px 12px;font-size:13px;text-align:right;font-weight:700">${f.cantidad}</td>
       <td style="padding:8px 12px;font-size:13px;text-align:right;color:var(--text2)">${fmtLPS(f.precioUnit)}</td>
       <td style="padding:8px 12px;font-size:13px;text-align:right;font-weight:800;color:var(--accent2)">${fmtLPS(f.subtotal)}</td>
@@ -10843,7 +10874,7 @@ function renderReporteProductos() {
           style="padding:4px 9px;font-size:11px;border:none;border-radius:6px;cursor:pointer;background:rgba(61,106,255,.18);color:var(--accent);font-weight:700;margin-right:4px;transition:background .15s"
           onmouseenter="this.style.background='rgba(61,106,255,.35)'" onmouseleave="this.style.background='rgba(61,106,255,.18)'"
           title="Ver detalle de la venta">👁 Ver</button>
-        ${puedeEditar ? `<button onclick="editarVenta('${f.ventaId}')"
+        ${puedeEditar ? `<button onclick="_vRPPVolver=true;editarVenta('${f.ventaId}')"
           style="padding:4px 9px;font-size:11px;border:none;border-radius:6px;cursor:pointer;background:rgba(0,200,160,.15);color:#00c8a0;font-weight:700;transition:background .15s"
           onmouseenter="this.style.background='rgba(0,200,160,.3)'" onmouseleave="this.style.background='rgba(0,200,160,.15)'"
           title="Editar venta">✏️ Editar</button>` : ''}
