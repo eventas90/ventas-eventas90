@@ -1986,6 +1986,56 @@ function agregarDeCatalogo(prodId) {
   showToast('✅ ' + p.producto, 'success', 1800);
 }
 
+// ── Aviso: producto escrito a mano que ya existe en el catálogo ──
+// Una línea manual no se descuenta del inventario y la web sigue mostrando ese stock
+// (pasó con "3 Luces NANLITE FS-300C", 22-sep-2026). Misma lógica que index.html y que la
+// edge function alerta-lineas-manuales, que manda por correo las que se escapen.
+const _CAT_STOP = new Set(['de','del','la','el','los','las','para','con','sin','y','en','por','un','una','x',
+  'luz','luces','kit','set','unidad','unidades','und','ud','uds','pcs','pack','nuevo','nueva','usado','usada']);
+const _CAT_NO_BODEGA = /\b(pedido|reparacion\w*|repacion|mantenimiento|servicio|anticipo|abono|restante|saldo)\b/;
+const _catNorm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/(\d)[.,](\d)/g, '$1$2');
+const _catTokens = s => _catNorm(s).split(/[^a-z0-9]+/).filter(t => t.length >= 2 && !_CAT_STOP.has(t));
+
+function _parecidoCatalogo(texto, nombreProd) {
+  if (_CAT_NO_BODEGA.test(_catNorm(texto))) return 0;
+  const tk = [...new Set(_catTokens(texto))];
+  if (tk.length < 2) return 0;
+  const comp = _catNorm(nombreProd).replace(/[^a-z0-9]/g, '');
+  const ptk  = new Set(_catTokens(nombreProd));
+  const esta = t => ptk.has(t) || (t.length >= 4 && comp.includes(t));
+  const modelos = tk.filter(t => /\d/.test(t));
+  for (const m of modelos) if (!ptk.has(m) && !comp.includes(m)) return 0;
+  const hits  = tk.filter(t => esta(t) || (/\d/.test(t) && comp.includes(t))).length;
+  const ratio = hits / tk.length;
+  if (modelos.length) return ratio >= 0.75 ? ratio + 0.5 : 0;
+  return (ratio >= 0.8 && hits >= 3) ? ratio : 0;
+}
+
+function _productoParecido(texto) {
+  let mejor = null, pts = 0;
+  for (const p of (productos || [])) {
+    const s = _parecidoCatalogo(texto, p.producto);
+    if (!s) continue;
+    const v = s + ((parseInt(p.cantidad) || 0) > 0 ? 0.01 : 0);
+    if (v > pts) { mejor = p; pts = v; }
+  }
+  return mejor;
+}
+
+// Pregunta una sola vez por texto. Devuelve el producto si el usuario quiere usar el del catálogo.
+function _ofrecerProductoCatalogo(item) {
+  if (!item || item.tipo !== 'manual' || item.productoId) return null;
+  const texto = String(item.descripcion || '').trim();
+  if (!texto || item._catPreguntado === texto) return null;
+  item._catPreguntado = texto;
+  const p = _productoParecido(texto);
+  if (!p) return null;
+  return confirm(`📦 "${texto}" parece un producto del catálogo:\n\n${p.producto}\nSKU ${p.sku || '—'} · Stock ${parseInt(p.cantidad) || 0}\n\n` +
+    `Escrito a mano NO se descuenta del inventario y la web sigue mostrando ese stock.\n\n` +
+    `Aceptar = usar el producto del catálogo\nCancelar = dejarlo escrito a mano`) ? p : null;
+}
+
 function agregarManual() {
   vItems.push({
     tipo:        'manual',
@@ -2122,6 +2172,17 @@ function actualizarItem(vid, campo, valor) {
     }
   } else if (campo === 'descripcion') {
     it.descripcion = valor;
+    const p = _ofrecerProductoCatalogo(it);
+    if (p) {
+      const cant = it.cantidad || 1;
+      vItems = vItems.filter(x => x._id !== vid);
+      agregarDeCatalogo(p.id);
+      const nuevo = vItems[vItems.length - 1];
+      if (nuevo && nuevo.productoId === p.id) nuevo.cantidad = cant;
+      renderItems();
+      calcResumen();
+      return;
+    }
   }
   const card = document.getElementById('icard_'+vid);
   if (card) {
@@ -3353,7 +3414,20 @@ function cActualizarItem(id, campo, valor) {
   } else if (campo==='llevaISV') {
     it.llevaISV=!!valor; cRenderItems();
   } else {
-    it[campo]=valor; calcResumenCot();
+    it[campo]=valor;
+    const p = campo==='descripcion' ? _ofrecerProductoCatalogo(it) : null;
+    if (p) {
+      const cant = it.cantidad||1, nota = it.notaItem||'';
+      const previo = cItems.find(x=>x.productoId===p.id);
+      const cantPrevia = previo ? previo.cantidad : 0;
+      cItems = cItems.filter(x=>x._id!==id);
+      cAgregarProducto(p.id);
+      const nuevo = cItems.find(x=>x.productoId===p.id);
+      if (nuevo) { nuevo.cantidad = cantPrevia + cant; if (nota && !nuevo.notaItem) nuevo.notaItem = nota; }
+      cRenderItems();
+      return;
+    }
+    calcResumenCot();
   }
 }
 
