@@ -9114,8 +9114,9 @@ function filtrarVentasPorPeriodo(lista, periodo, desde, hasta) {
     String(ahora.getDate()).padStart(2,'0');
 
   return lista.filter(v => {
-    // Ventas parciales liquidadas → usar fecha_liquidada como referencia de período
-    const fechaBase = v.fechaLiquidada || v.fecha;
+    // Cada venta cuenta en SU fecha (liquidarla no la mueve de período).
+    // Lo cobrado se cuenta aparte, por la fecha de cada abono (_cobrosPeriodo).
+    const fechaBase = v.fecha;
     const fechaStr = (fechaBase || '').substring(0, 10);
 
     if (periodo === 'hoy') return fechaStr === hoyStr;
@@ -10215,6 +10216,29 @@ function _fechaComision(v) {
   return (v.fecha || '').substring(0,10);
 }
 
+// Cobros del período: cada pago en SU propia fecha.
+//  · Venta de contado → su total, en la fecha de la venta.
+//  · Venta a crédito  → cada abono en la fecha del abono, solo por lo abonado
+//    (aunque la venta sea de otro período: anterior = true).
+function _cobrosPeriodo(periodo, desde, hasta, vidFilt) {
+  const enP = f => filtrarVentasPorPeriodo([{ fecha: (f||'').substring(0,10) }], periodo, desde, hasta).length > 0;
+  const out = [];
+  rentasPorRol(ventas).forEach(v => {
+    if (vidFilt && String(v.vendedorId) !== String(vidFilt)) return;
+    const ventaEnP = enP(v.fecha);
+    if (v.metodoPago !== 'parcial') {
+      if (ventaEnP) out.push({ v, monto: v.total || 0, sinISV: v.subtotalSinISV || 0, anterior: false });
+      return;
+    }
+    const factor = (v.total || 0) > 0 ? (v.subtotalSinISV || 0) / v.total : 0;
+    (v.abonos || []).forEach(a => {
+      const m = a.monto || 0;
+      if (m > 0 && a.fecha && enP(a.fecha)) out.push({ v, monto: m, sinISV: m * factor, anterior: !ventaEnP });
+    });
+  });
+  return out;
+}
+
 function renderReporteVendedores() {
   const periodo   = (document.getElementById('vRepPeriodo')||{}).value||'mes';
   const vidFilt   = (document.getElementById('vRepVendedor')||{}).value||'';
@@ -10247,9 +10271,13 @@ function renderReporteVendedores() {
     porVendedor[key].totalSinISV   += (v.subtotalSinISV || 0);
     porVendedor[key].totalUtilidad += v.utilidadBruta;
     porVendedor[key].totalCosto    += (v.subtotalSinISV - v.utilidadBruta - (v.descuento || 0));
-    // Cobrado sin ISV: solo ventas 100% canceladas (sin saldo pendiente)
-    const _tienePendiente = v.metodoPago === 'parcial' && (v.saldoPendiente||0) > 0;
-    porVendedor[key].totalCobradoSinISV += _tienePendiente ? 0 : (v.subtotalSinISV||0);
+  });
+  // Cobrado sin ISV por vendedor: lo que entró en el período (contado + abonos con fecha en el período)
+  const cobros = _cobrosPeriodo(periodo, desde, hasta, vidFilt);
+  cobros.forEach(c => {
+    const key = c.v.vendedorId || 'sin_vendedor';
+    if (!porVendedor[key]) porVendedor[key] = { nombre: c.v.vendedorNombre, ventas:[], totalVentas:0, totalComision:0, totalUtilidad:0, totalCosto:0, utilidadCobrada:0, costoCobrado:0, totalSinISV:0, totalCobradoSinISV:0 };
+    porVendedor[key].totalCobradoSinISV = (porVendedor[key].totalCobradoSinISV || 0) + c.sinISV;
   });
   // Sumar comisiones por vendedor usando la lista de comisiones del período
   todasParaComision.forEach(v => {
@@ -10280,15 +10308,11 @@ function renderReporteVendedores() {
   const ventasCredito = lista.filter(v => v.metodoPago === 'parcial' && (v.saldoPendiente||0) > 0);
   const totPorCobrar  = ventasCredito.reduce((a,v)=>a+(v.saldoPendiente||0), 0);
   const cntCredito    = ventasCredito.length;
-  // Total ya cobrado = total - saldo pendiente (lo que realmente entró a caja)
-  const totCobrado    = totVentas - totPorCobrar;
-  const cntCobrado    = lista.length - cntCredito;
-  // Cobrado sin ISV: suma proporcional de cada venta
-  // Cobrado sin ISV: solo ventas 100% canceladas (excluye parciales con saldo pendiente)
-  const totCobradoSinISV = lista.reduce((a,v) => {
-    const tienePendiente = v.metodoPago === 'parcial' && (v.saldoPendiente||0) > 0;
-    return a + (tienePendiente ? 0 : (v.subtotalSinISV||0));
-  }, 0);
+  // Total cobrado = dinero que entró EN el período: ventas de contado del período
+  // + abonos con fecha en el período (cada abono en su fecha, solo por lo abonado)
+  const totCobrado       = cobros.reduce((a,c) => a + c.monto, 0);
+  const totCobradoSinISV = cobros.reduce((a,c) => a + c.sinISV, 0);
+  const totCobradoAnt    = cobros.filter(c => c.anterior).reduce((a,c) => a + c.monto, 0);
 
   kpisEl.innerHTML = `
     <div class="stat-card"><div class="stat-label">Ventas Totales</div><div class="stat-value stat-green">${fmtLPS(totVentas)}</div><div class="stat-sub">${lista.length} transacción(es)</div></div>
@@ -10296,7 +10320,7 @@ function renderReporteVendedores() {
     <div class="stat-card" style="border-color:rgba(0,200,160,.3)">
       <div class="stat-label" style="color:var(--accent2)">✅ Total Cobrado</div>
       <div class="stat-value" style="color:var(--accent2)">${fmtLPS(totCobrado)}</div>
-      <div class="stat-sub" style="color:var(--text3)">sin créditos pendientes</div>
+      <div class="stat-sub" style="color:var(--text3)">${totCobradoAnt > 0 ? `incluye ${fmtLPS(totCobradoAnt)} de abonos a ventas anteriores` : 'contado + abonos del período'}</div>
     </div>
     <div class="stat-card" style="border-color:rgba(0,200,160,.2)">
       <div class="stat-label" style="color:#00e0b0">✅ Cobrado sin ISV</div>
@@ -11396,14 +11420,15 @@ function _getDatosReporte() {
   const porVendedor = {};
   lista.forEach(v => {
     const key = v.vendedorId||'?';
-    if (!porVendedor[key]) porVendedor[key] = { nombre: v.vendedorNombre||'Sin vendedor', pct: v.pctComision||(parametros.comisionVentas||10), ventas:[], comision:0, utilidad:0, costo:0, utilidadCobrada:0, costoCobrado:0, porCobrar:0 };
+    if (!porVendedor[key]) porVendedor[key] = { nombre: v.vendedorNombre||'Sin vendedor', pct: v.pctComision||(parametros.comisionVentas||10), ventas:[], ventasCom:[], comision:0, utilidad:0, costo:0, utilidadCobrada:0, costoCobrado:0, porCobrar:0 };
     porVendedor[key].ventas.push(v);
     porVendedor[key].utilidad += v.utilidadBruta||0;
     porVendedor[key].costo    += (v.subtotalSinISV - (v.utilidadBruta||0) - (v.descuento||0));
   });
   todasParaComision.forEach(v => {
     const key = v.vendedorId||'?';
-    if (!porVendedor[key]) porVendedor[key] = { nombre: v.vendedorNombre||'Sin vendedor', pct: v.pctComision||(parametros.comisionVentas||10), ventas:[], comision:0, utilidad:0, costo:0, utilidadCobrada:0, costoCobrado:0, porCobrar:0 };
+    if (!porVendedor[key]) porVendedor[key] = { nombre: v.vendedorNombre||'Sin vendedor', pct: v.pctComision||(parametros.comisionVentas||10), ventas:[], ventasCom:[], comision:0, utilidad:0, costo:0, utilidadCobrada:0, costoCobrado:0, porCobrar:0 };
+    porVendedor[key].ventasCom.push(v); // ventas cuya comisión cae en este período (aunque la venta sea de otro)
     porVendedor[key].comision += v.comision||0;
     porVendedor[key].utilidadCobrada += v.utilidadBruta||0;
     porVendedor[key].costoCobrado    += (v.subtotalSinISV - (v.utilidadBruta||0) - (v.descuento||0));
@@ -11421,7 +11446,8 @@ function _getDatosReporte() {
     rows = rows.filter(r => seleccionados.includes(r.nombre));
   }
 
-  return { rows, lista, todasParaComision, labelPeriodo, vidFilt };
+  const cobros = _cobrosPeriodo(periodo, desde, hasta, vidFilt);
+  return { rows, lista, todasParaComision, labelPeriodo, vidFilt, cobros };
 }
 
 function _estilosPDF() {
@@ -11466,18 +11492,34 @@ function pdfComisionVendedor() {
 
   const seccionesVendedores = targetRows.map(r => {
     const totalVentas = r.ventas.reduce((s,v)=>s+v.total,0);
-    const filas = r.ventas.map(v => {
+    // Filas: ventas del período + ventas de otros períodos que se terminaron de pagar en este
+    // (su comisión cae aquí). Cada venta sale con SU fecha.
+    const idsPeriodo = new Set(r.ventas.map(v => v.id));
+    const idsCom     = new Set((r.ventasCom||[]).map(v => v.id));
+    const otras      = (r.ventasCom||[]).filter(v => !idsPeriodo.has(v.id));
+    const filasV     = [...r.ventas, ...otras].sort((a,b) => (a.fecha||'').localeCompare(b.fecha||''));
+    const filas = filasV.map(v => {
       const isParcial = v.metodoPago==='parcial' && (v.saldoPendiente||0)>0;
-      return `<tr>
+      const esOtra    = !idsPeriodo.has(v.id);          // venta de otro período, liquidada en este
+      const comAqui   = idsCom.has(v.id);               // su comisión cae en este período
+      const fCom      = _fechaComision(v);
+      const comTxt    = isParcial ? '⏳ Pendiente'
+                      : comAqui   ? fmtL(v.comision)
+                      : `↪ ${fCom ? fmtHN(new Date(fCom+'T12:00:00')) : '—'}`; // liquidada en otra fecha: su comisión cae allá
+      return `<tr${esOtra?' style="color:#777;font-style:italic"':''}>
         <td style="font-family:monospace;font-size:10px">${(v.id||'').slice(-10)}</td>
-        <td>${fmtHN(new Date(v.fecha+'T12:00:00'))}</td>
+        <td>${fmtHN(new Date(v.fecha+'T12:00:00'))}${esOtra?' *':''}</td>
         <td>${v.clienteNombre||'—'}</td>
-        <td class="right">${fmtL(v.total)}</td>
-        <td class="right">${fmtL(v.utilidadBruta)}</td>
-        <td class="right ${isParcial?'gold':''}">${isParcial?'⏳ Pendiente':fmtL(v.comision)}</td>
+        <td class="right">${esOtra?'('+fmtL(v.total)+')':fmtL(v.total)}</td>
+        <td class="right">${comAqui?fmtL(v.utilidadBruta):'—'}</td>
+        <td class="right ${isParcial?'gold':''}">${comTxt}</td>
         <td class="right ${isParcial?'red':''}">${isParcial?fmtL(v.saldoPendiente):'—'}</td>
       </tr>`;
     }).join('');
+    const notaOtras = otras.length
+      ? `<p style="font-size:10px;color:#666;margin:-6px 0 0">* Venta de otro período que se terminó de pagar en este: no suma en Total Vendido (entre paréntesis), pero su comisión sí se acredita aquí.</p>` : '';
+    const notaFlecha = filasV.some(v => !idsCom.has(v.id) && !(v.metodoPago==='parcial' && (v.saldoPendiente||0)>0))
+      ? `<p style="font-size:10px;color:#666;margin:2px 0 0">↪ Venta a crédito de este período liquidada en otra fecha: su comisión se acredita en el período de esa fecha.</p>` : '';
     const roi = (r.costoCobrado||0) > 0 ? ((r.utilidadCobrada||0)/r.costoCobrado*100).toFixed(1) : '—';
     return `
     <div style="margin-bottom:24px;page-break-inside:avoid">
@@ -11505,6 +11547,7 @@ function pdfComisionVendedor() {
           <td class="right red">${r.porCobrar>0?fmtL(r.porCobrar):'—'}</td>
         </tr></tfoot>
       </table>
+      ${notaOtras}${notaFlecha}
     </div>`;
   }).join('');
 
@@ -11525,8 +11568,9 @@ ${seccionesVendedores}
 }
 
 function pdfReporteEquipo() {
-  const { rows, lista, todasParaComision, labelPeriodo } = _getDatosReporte();
+  const { rows, lista, todasParaComision, labelPeriodo, cobros } = _getDatosReporte();
   if (!rows.length) { showToast('⚠️ Sin datos para generar PDF','warn'); return; }
+  const totCobradoPer = (cobros||[]).reduce((s,c)=>s+c.monto,0); // contado + abonos con fecha en el período
 
   const ahora = new Date(new Date().toLocaleString('en-US',{timeZone:'America/Tegucigalpa'}));
   const pad = n => String(n).padStart(2,'0');
@@ -11568,6 +11612,7 @@ function pdfReporteEquipo() {
 <hr>
 <div class="kpi-grid">
   <div class="kpi"><div class="kpi-label">Total Vendido</div><div class="kpi-val green">${fmtL(totVentas)}</div></div>
+  <div class="kpi"><div class="kpi-label">Cobrado en el período</div><div class="kpi-val" style="color:#0a8f72">${fmtL(totCobradoPer)}</div></div>
   <div class="kpi"><div class="kpi-label">Utilidad Cobrada</div><div class="kpi-val blue">${fmtL(totUtilidad)}</div></div>
   <div class="kpi"><div class="kpi-label">ROI Promedio</div><div class="kpi-val">${roi}%</div></div>
   <div class="kpi"><div class="kpi-label">Total Comisiones</div><div class="kpi-val" style="color:#1a7a4a">${fmtL(totComision)}</div></div>
