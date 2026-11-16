@@ -8976,7 +8976,8 @@ async function guardarVenta() {
     promesaPago:      promesaPago,
     abonos:           [...vItemsAbonos],
     saldoPendiente:   Math.max(0, +(total - vItemsAbonos.reduce((s,a)=>s+(a.monto||0),0)).toFixed(2)),
-    fechaRegistro: new Date().toISOString(),
+    // Editar no cambia la fecha de ingreso (solo los abonos nuevos salen en su propia fecha)
+    fechaRegistro: (vEditandoId && (ventas.find(x=>x.id===vEditandoId)||{}).fechaRegistro) || new Date().toISOString(),
     registradoPor: currentUser ? currentUser.nombre : '—',
     nota: vEditandoId ? ((ventas.find(x=>x.id===vEditandoId)||{}).nota||'') : '',
     tipoVenta: vTipoVenta || 'formal'
@@ -8989,9 +8990,9 @@ async function guardarVenta() {
   venta.metodoPagoLabel = esParcialLiquidada
     ? 'Parcial - Liquidada'
     : ((parametros.metodosPago||[]).find(m=>m.id===metodoPagoId)?.label || metodoPagoId);
-  venta.fechaLiquidada = esParcialLiquidada
-    ? (ventaExistente.fechaLiquidada || new Date().toISOString().split('T')[0])
-    : (ventaExistente.fechaLiquidada || '');
+  // Liquidada en la fecha del último abono (igual que el servidor en save_venta)
+  const _ultAbono = venta.abonos.map(a => (a.fecha||'').substring(0,10)).filter(Boolean).sort().pop();
+  venta.fechaLiquidada = esParcialLiquidada ? (_ultAbono || _hoyHN()) : '';
 
   // ── Guardar en Supabase (fuente de verdad) ──
   mostrarCargando('☁️ Guardando venta en Supabase...');
@@ -9212,15 +9213,25 @@ function renderHistorialVentas() {
   const desde    = periodo === 'rango' ? ((document.getElementById('vFiltDesde')||{}).value||'') : '';
   const hasta    = periodo === 'rango' ? ((document.getElementById('vFiltHasta')||{}).value||'') : '';
 
-  let lista = rentasPorRol(ventas);
-  lista = filtrarVentasPorPeriodo(lista, periodo, desde, hasta);
-  if (vidFilt) lista = lista.filter(v => String(v.vendedorId) === String(vidFilt));
-  if (envFilt) lista = lista.filter(v => (v.metodoEnvio||'') === envFilt);
-  if (q)       lista = lista.filter(v =>
+  let base = rentasPorRol(ventas);
+  if (vidFilt) base = base.filter(v => String(v.vendedorId) === String(vidFilt));
+  if (envFilt) base = base.filter(v => (v.metodoEnvio||'') === envFilt);
+  if (q)       base = base.filter(v =>
     (v.clienteNombre||'').toLowerCase().includes(q) ||
     (v.vendedorNombre||'').toLowerCase().includes(q) ||
     (v.clienteCiudad||'').toLowerCase().includes(q)
   );
+  // Cada venta sale en SU fecha original (editarla o liquidarla no la mueve).
+  // Los abonos de ventas de otras fechas salen en la fecha del abono y SOLO con el monto abonado.
+  const _enPeriodo = f => filtrarVentasPorPeriodo([{ fecha: (f||'').substring(0,10) }], periodo, desde, hasta).length > 0;
+  let lista = base.filter(v => _enPeriodo(v.fecha));
+  const abonosPeriodo = periodo === 'todo' ? [] : base
+    .filter(v => !_enPeriodo(v.fecha))
+    .flatMap(v => (v.abonos || [])
+      .filter(a => (a.monto || 0) > 0 && a.fecha && _enPeriodo(a.fecha))
+      .map(a => ({ v, a })))
+    .sort((x, y) => (y.a.fecha || '').localeCompare(x.a.fecha || ''));
+  const totalAbonosPeriodo = abonosPeriodo.reduce((s, x) => s + (x.a.monto || 0), 0);
 
   // Ordenar — usar timestamps numéricos para comparación robusta
   lista = [...lista];
@@ -9244,10 +9255,38 @@ function renderHistorialVentas() {
 
   const totalVentas   = lista.reduce((a,v)=>a+v.total,0);
   const totalComision = lista.reduce((a,v)=>a+v.comision,0);
-  if (sub) sub.textContent = `${lista.length} venta(s) · Total: ${fmtLPS(totalVentas)} · Comisiones: ${fmtLPS(totalComision)}`;
+  if (sub) sub.textContent = `${lista.length} venta(s) · Total: ${fmtLPS(totalVentas)} · Comisiones: ${fmtLPS(totalComision)}`
+    + (abonosPeriodo.length ? ` · Abonos de ventas anteriores: ${fmtLPS(totalAbonosPeriodo)} (${abonosPeriodo.length})` : '');
+
+  const abonosHtml = !abonosPeriodo.length ? '' : `
+    <div style="margin-top:18px;font-weight:700;font-size:13px;color:var(--accent3)">💵 Abonos recibidos en este período (ventas de otras fechas) · ${fmtLPS(totalAbonosPeriodo)}</div>
+    <div style="font-size:11px;color:var(--text3);margin:2px 0 8px">Solo cuenta lo abonado; la venta completa sigue en su fecha original.</div>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>Fecha abono</th><th>Cliente</th><th>Venta del</th><th>Vendedor</th><th>Nota del abono</th>
+        <th style="text-align:right">Abonado</th>
+        <th style="text-align:right;color:var(--red)">Saldo actual</th>
+      </tr></thead>
+      <tbody>
+        ${abonosPeriodo.map(({ v, a }) => {
+          const saldo = v.saldoPendiente || 0;
+          return `<tr onclick="verDetalleVenta('${v.id}')" style="cursor:pointer">
+            <td style="white-space:nowrap">${fmtFecha(a.fecha)}</td>
+            <td style="font-weight:600">${v.clienteNombre}</td>
+            <td style="white-space:nowrap;color:var(--text2)">${fmtFecha(v.fecha)} · ${fmtLPS(v.total)}</td>
+            <td>${v.vendedorNombre}</td>
+            <td style="font-size:12px;color:var(--text2)">${(a.nota || '').replace(/</g,'&lt;') || '—'}</td>
+            <td style="text-align:right;color:var(--green);font-weight:700">${fmtLPS(a.monto)}</td>
+            <td style="text-align:right">${saldo > 0 ? `<span style="color:var(--red);font-weight:700">${fmtLPS(saldo)}</span>` : '<span style="font-size:11px;color:var(--green)">✅ Liquidada</span>'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table></div>`;
 
   if (!lista.length) {
-    el.innerHTML = '<div style="text-align:center;padding:48px;color:var(--text3)"><div style="font-size:32px;margin-bottom:10px">🛒</div><div>Sin ventas registradas</div></div>';
+    el.innerHTML = abonosPeriodo.length
+      ? '<div style="text-align:center;padding:18px;color:var(--text3)">Sin ventas nuevas en este período</div>' + abonosHtml
+      : '<div style="text-align:center;padding:48px;color:var(--text3)"><div style="font-size:32px;margin-bottom:10px">🛒</div><div>Sin ventas registradas</div></div>';
     return;
   }
 
@@ -9325,7 +9364,7 @@ function renderHistorialVentas() {
         </tr>`;
       }).join('')}
     </tbody>
-  </table></div>`;
+  </table></div>` + abonosHtml;
 }
 
 // ===== NOTA RÁPIDA DE VENTA =====
