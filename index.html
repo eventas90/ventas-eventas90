@@ -9264,6 +9264,7 @@ function renderHistorialVentas() {
     <div style="font-size:11px;color:var(--text3);margin:2px 0 8px">Solo cuenta lo abonado; la venta completa sigue en su fecha original.</div>
     <div class="table-wrap"><table>
       <thead><tr>
+        <th>Acciones</th>
         <th>Fecha abono</th><th>Cliente</th><th>Venta del</th><th>Vendedor</th><th>Nota del abono</th>
         <th style="text-align:right">Abonado</th>
         <th style="text-align:right;color:var(--red)">Saldo actual</th>
@@ -9272,6 +9273,9 @@ function renderHistorialVentas() {
         ${abonosPeriodo.map(({ v, a }) => {
           const saldo = v.saldoPendiente || 0;
           return `<tr onclick="verDetalleVenta('${v.id}')" style="cursor:pointer">
+            <td onclick="event.stopPropagation()" style="white-space:nowrap">
+              <button class="btn btn-sm" onclick="imprimirReciboTermico('${v.id}')" title="Imprimir recibo en impresora térmica" style="background:#555;color:#fff;border:none">🧾</button>
+            </td>
             <td style="white-space:nowrap">${fmtFecha(a.fecha)}</td>
             <td style="font-weight:600">${v.clienteNombre}</td>
             <td style="white-space:nowrap;color:var(--text2)">${fmtFecha(v.fecha)} · ${fmtLPS(v.total)}</td>
